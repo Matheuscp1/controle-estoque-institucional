@@ -3,6 +3,10 @@ package br.com.estoque.items.domain;
 public final class ErroItem {
     private ErroItem() {}
 
+    public static class StockConflict extends RuntimeException {
+        public StockConflict(String message) { super(message); }
+    }
+
     public static class NaoEncontrado extends RuntimeException {
         public NaoEncontrado(String codigo) { super("Item não encontrado: " + codigo); }
     }

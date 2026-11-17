@@ -50,7 +50,7 @@ Origem aceita `PORTAL` ou `INTEGRACAO`; situação aceita `CONFIRMADO` ou `CANCE
 
 A obrigatoriedade de motivo e a consistência cronológica do cancelamento são premissas desta modelagem. O enunciado exige cancelamento único e devolução de saldo, mas não determina esses detalhes. A análise encontrou cancelamentos incompletos no legado; esses registros precisam de uma política explícita de tratamento antes da carga.
 
-As restrições SQL não garantem sozinhas que um pedido tenha pelo menos uma linha, que o saldo seja debitado atomicamente, que o cancelamento ocorra uma única vez ou que a versão seja conferida nas edições. Essas garantias pertencem à próxima etapa de serviços transacionais e testes de concorrência. A assinatura permitirá comparar o conteúdo de reenvios com o mesmo identificador externo.
+As restrições SQL não garantem sozinhas que um pedido tenha pelo menos uma linha, que o saldo seja debitado atomicamente, que o cancelamento ocorra uma única vez ou que a versão seja conferida nas edições. O módulo `orders` implementa essas garantias com validações de domínio, transações, bloqueios e testes de concorrência. A assinatura compara o conteúdo de reenvios com o mesmo identificador externo.
 
 ## Consultas
 
@@ -64,7 +64,7 @@ As restrições SQL não garantem sozinhas que um pedido tenha pelo menos uma li
 mvn -Dtest=SchemaIntegrationTest test
 ```
 
-Os testes executam Flyway e verificam restrições com SQL direto em H2 no modo PostgreSQL. Cada teste tem rollback. A suíte independe das classes de negócio. O teste com PostgreSQL real permanece necessário antes de concluir as garantias de produção.
+Os testes de esquema executam Flyway e verificam restrições com SQL direto em H2 no modo PostgreSQL. Cada teste tem rollback. A suíte independe das classes de negócio. Adicionalmente, `OrdersPostgresTest` executa as operações de pedidos e estoque no PostgreSQL 15 real, incluindo concorrência e rollback. A carga histórica e seu desempenho ainda precisam de validação própria.
 
 ## Uso de IA nesta etapa
 

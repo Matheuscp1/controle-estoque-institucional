@@ -29,6 +29,26 @@ public record Item(String codigo, String descricao, String unidade, BigDecimal s
         return editar(descricao, unidade, saldo, false, versaoEsperada);
     }
 
+    public Item reservar(BigDecimal quantidade) {
+        validarQuantidade(quantidade);
+        if (!ativo) throw new ErroItem.StockConflict("Item inativo: " + codigo);
+        if (saldo.compareTo(quantidade) < 0) throw new ErroItem.StockConflict("Saldo insuficiente: " + codigo);
+        return editar(descricao, unidade, saldo.subtract(quantidade), ativo, versao);
+    }
+
+    public Item devolver(BigDecimal quantidade) {
+        validarQuantidade(quantidade);
+        var novoSaldo = saldo.add(quantidade);
+        try { validarSaldo(novoSaldo); }
+        catch (IllegalArgumentException e) { throw new ErroItem.StockConflict("Devolução excede o saldo máximo: " + codigo); }
+        return editar(descricao, unidade, novoSaldo, ativo, versao);
+    }
+
+    private static void validarQuantidade(BigDecimal quantidade) {
+        validarSaldo(quantidade);
+        if (quantidade.signum() == 0) throw new IllegalArgumentException("Quantidade deve ser positiva.");
+    }
+
     private void conferirVersao(long esperada) {
         if (esperada < 0) throw new IllegalArgumentException("Versão não pode ser negativa.");
         if (esperada != versao) throw new ErroItem.Conflito();

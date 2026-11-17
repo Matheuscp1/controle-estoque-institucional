@@ -1,6 +1,6 @@
 # controle-estoque-institucional
 
-Backend com modelagem, cadastro de itens e órgãos em Java 17 e Spring Boot 2.7.18.
+Backend de itens, órgãos e pedidos transacionais em Java 17 e Spring Boot 2.7.18.
 
 Projeto Maven: `br.com.estoque:controle-estoque-institucional`.
 Pacote Java: `br.com.estoque`.
@@ -21,7 +21,7 @@ Com Docker em execução:
 docker compose up --build
 ```
 
-A aplicação usa a porta `8080`. O Flyway aplica as migrações automaticamente; esta etapa oferece os endpoints de itens e órgãos.
+A aplicação usa a porta `8080`. O Flyway aplica as migrações automaticamente; estão disponíveis os endpoints de itens, órgãos e pedidos.
 O banco usa volume persistente. A senha padrão é apenas para desenvolvimento; configure `DB_PASSWORD` em `.env` para alterá-la.
 
 Para compilar com Java 17 e Maven:
@@ -34,7 +34,7 @@ Para executar sem Docker, disponibilize PostgreSQL, configure `DB_URL`, `DB_USER
 
 ## Arquitetura e API
 
-Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagonal)**. Uma única aplicação é organizada por funcionalidades, como itens, órgãos e pedidos. Dentro de cada módulo, as regras dependem de interfaces, enquanto os detalhes de HTTP e persistência ficam nos adaptadores externos. Os módulos de itens e órgãos já seguem essa organização; os demais serão implementados no mesmo padrão.
+Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagonal)**. Uma única aplicação é organizada por funcionalidades, como itens, órgãos e pedidos. Dentro de cada módulo, as regras dependem de interfaces, enquanto os detalhes de HTTP e persistência ficam nos adaptadores externos. Os módulos `items`, `organizations` e `orders` seguem essa organização; a importação seguirá o mesmo padrão.
 
 | Camada | Responsabilidade |
 | --- | --- |
@@ -46,6 +46,10 @@ Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagon
 Consulte [a arquitetura e o ciclo TDD](docs/arquitetura.md) e [os contratos da API de itens](docs/api-itens.md).
 
 O módulo `organizations` oferece cadastro e consulta paginada de órgãos, validação de UF e proteção contra códigos duplicados. Consulte [os contratos da API de órgãos](docs/api-organizations.md).
+
+O módulo `orders` oferece criação e consulta de pedidos, listagem por órgão e cancelamento. `OrderEntity` e `OrderItemEntity` representam o cabeçalho e suas linhas em JPA, com chave composta para impedir itens repetidos. Consulte [os contratos, exemplos e premissas da API de pedidos](docs/api-orders.md).
+
+Pedidos reservam todo o saldo em uma única transação. Os itens são bloqueados em ordem de código e suas versões avançam a cada movimentação. O identificador externo é único globalmente: reenvios equivalentes retornam o pedido existente; conteúdos diferentes recebem conflito. O cancelamento bloqueia o pedido e devolve as quantidades somente uma vez, inclusive para itens posteriormente inativados. Uma falha desfaz a operação inteira.
 
 A persistência usa Spring Data JPA, com `@Entity` e `@Version` na infraestrutura. O domínio permanece independente do JPA. As migrações são gerenciadas pelo Flyway; o Hibernate valida o esquema existente.
 
@@ -84,7 +88,21 @@ As migrações criam `orgaos`, `itens`, `pedidos` e `pedido_itens`, com restriç
 mvn test
 ```
 
-Os testes unitários de itens executam sem Spring. Os testes de API e de integridade executam em H2 no modo PostgreSQL. A massa histórica foi analisada. A validação com PostgreSQL real e a implementação da carga continuam pendentes.
+Os testes unitários de domínio e aplicação executam sem Spring. Os testes de API e de integridade usam H2 no modo PostgreSQL. A suíte de pedidos também executa com PostgreSQL 15 real via Testcontainers, incluindo reserva concorrente, reenvios simultâneos, rollback integral e cancelamento concorrente. Essa suíte exige Docker em execução e pode baixar a imagem na primeira execução.
+
+Para executar apenas a suíte de pedidos no PostgreSQL:
+
+```sh
+mvn "-Dtest=OrdersPostgresTest" test
+```
+
+Para executar os testes sem Docker, excluindo explicitamente a suíte PostgreSQL:
+
+```sh
+mvn "-Dtest=*,!OrdersPostgresTest" test
+```
+
+Esses testes verificam regras e concorrência funcional; não comprovam desempenho com milhões de registros. A massa histórica foi analisada, mas a carga completa permanece pendente.
 
 ## Tratamento dos dados legados
 
@@ -112,4 +130,4 @@ A carga será feita em Java, com leitura em fluxo, preparação dos dados e grav
 
 ## Próximas etapas
 
-Concluir o módulo de pedidos antes de integrar a importação: entidades de pedido e suas linhas, atendimento integral, idempotência, cancelamento único e consultas. Depois finalizar a carga histórica com RabbitMQ, reutilizando as regras de validação sem debitar novamente o histórico. O código preliminar da fila permanece em desenvolvimento. Validar as operações concorrentes no PostgreSQL e medir desempenho com a massa histórica.
+Finalizar a carga histórica com RabbitMQ sobre a base de itens, órgãos e pedidos, reutilizando as regras de validação sem debitar novamente o histórico. O código preliminar da fila permanece em desenvolvimento. Consolidar o saneamento e a reconciliação dos dados, validar falhas e reentregas da fila e medir desempenho com a massa histórica.

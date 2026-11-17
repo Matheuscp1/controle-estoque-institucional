@@ -2,7 +2,7 @@
 
 ## Decisão
 
-Monólito modular: uma aplicação Spring Boot, um PostgreSQL e módulos organizados por funcionalidade. Os módulos de itens e órgãos estão implementados; pedidos e importação seguirão a mesma organização.
+Monólito modular: uma aplicação Spring Boot, um PostgreSQL e módulos organizados por funcionalidade. Os módulos de itens, órgãos e pedidos estão implementados; a importação seguirá a mesma organização.
 
 Essa estrutura permite manter transações locais entre pedidos e estoque, necessárias para o atendimento integral, e subir o backend com um único serviço. O desafio não exige deploy ou escala independentes por funcionalidade, portanto microsserviços acrescentariam comunicação e coordenação de transações sem uma necessidade demonstrada.
 
@@ -48,9 +48,13 @@ No cadastro, a versão da entidade nova é nula: o Spring Data usa `persist`, e 
 
 Edição e inativação verificam a versão esperada e alteram uma entidade gerenciada dentro da transação. O Hibernate usa `@Version` para gerar o update condicionado à versão e incrementá-la. Se outra operação gravar nesse intervalo, a falha otimista é convertida em conflito. O teste da versão no banco é indispensável; verificar apenas o objeto em memória não impediria a corrida.
 
-Quando os campos não mudam, `OPTIMISTIC_FORCE_INCREMENT` mantém a regra de avançar a versão em toda gravação. As exceções são tratadas fora de `TransactionTemplate`, após rollback, incluindo falhas no commit. Saldo inicial e data de cadastro têm `updatable=false` e são preservados na edição. A versão deve ser incrementada também pelas futuras movimentações de pedidos.
+Quando os campos não mudam, `OPTIMISTIC_FORCE_INCREMENT` mantém a regra de avançar a versão em toda gravação. As exceções são tratadas fora de `TransactionTemplate`, após rollback, incluindo falhas no commit. Saldo inicial e data de cadastro têm `updatable=false` e são preservados na edição. Reservas e devoluções de pedidos também incrementam a versão por meio do JPA.
 
-Pedidos terão uma fronteira transacional abrangendo cabeçalho, linhas e saldo dos itens. O coordenador da transação ficará na composição com Spring; o domínio continuará independente. Os bloqueios dos itens precisarão seguir ordem determinística. Essa etapa ainda será implementada na arquitetura modular.
+Pedidos têm uma fronteira transacional abrangendo cabeçalho, linhas e saldo dos itens. `OrderService` depende das portas `OrderRepository`, `StockMovement`, `OrganizationLookup` e `UnitOfWork`. A implementação Spring da unidade de trabalho usa `TransactionTemplate`, com uma transação própria em `READ_COMMITTED` por operação e timeout de 30 segundos. Os casos de uso não devem ser usados como passos de uma transação externa que espere revertê-los depois: cada chamada confirma ou desfaz seu próprio trabalho.
+
+`OrderEntity` mapeia o cabeçalho e `OrderItemEntity` usa `@EmbeddedId`/`@MapsId` para a chave pedido/item. Os relacionamentos são lazy e não propagam exclusão ao catálogo ou ao órgão. DTOs e objetos de domínio são materializados dentro da transação; entidades JPA não chegam à API.
+
+O cabeçalho é inserido primeiro para disputar a unicidade de `id_externo`. Somente o vencedor reserva estoque. Uma inserção duplicada causa rollback antes da consulta de replay em outra transação. Reserva e devolução usam `PESSIMISTIC_WRITE` em ordem de código dos itens; cancelamento bloqueia primeiro o cabeçalho. O adapter de estoque chama as regras do domínio `Item`, preserva o saldo inicial e deixa o Hibernate incrementar `@Version`. As dependências entre persistências de módulos ficam na infraestrutura.
 
 ## TDD
 
@@ -70,10 +74,10 @@ Os testes unitários rodam sem Spring; os testes de API usam Spring, MockMvc, Fl
 mvn "-Dtest=ItemTest,ItemServiceTest,ItensApiTest" test
 ```
 
-H2 não comprova a concorrência específica do PostgreSQL. Continuam pendentes os testes nesse banco e as medições com a massa real.
+Os testes de pedidos começaram pelo domínio e pelos contratos de aplicação/API, com falhas por tipos ainda ausentes. A mesma suíte de contrato roda em H2 e PostgreSQL 15 via Testcontainers. Ela cobre rollback de um pedido com vários itens, cancelamento único, reenvios concorrentes, saldo disputado, conflito de edição após movimentação, filtros e contrato HTTP. A conexão de teste H2 usa fuso UTC, alinhado ao binding JDBC do Hibernate; os instantes retornados pela criação e consulta também são comparados. H2 sozinho não comprova a concorrência específica do PostgreSQL. Medições de desempenho com a massa real continuam pendentes.
 
 ## Próximos módulos
 
-Órgãos já disponibiliza cadastro e consulta, com JPA e testes de duplicidade concorrente. A próxima etapa é pedidos: entidade de pedido, linhas, reserva integral, idempotência e cancelamento único. Somente depois essa base será integrada à carga histórica com RabbitMQ.
+Órgãos disponibiliza cadastro e consulta, com JPA e testes de duplicidade concorrente. Pedidos disponibiliza entidades de cabeçalho e linhas, reserva integral, idempotência, cancelamento único e consultas paginadas. A próxima etapa é integrar essa base à carga histórica com RabbitMQ.
 
 A fila já possui um protótipo local em desenvolvimento. Sua infraestrutura não substitui a implementação das regras de negócio. A importação deverá validar os dados legados e preservar seus saldos e situações, sem executar novamente os débitos de pedidos antigos. Os módulos compartilharão o banco, com adaptadores próprios e contratos explícitos para operações que atravessarem módulos.
