@@ -1,6 +1,6 @@
 # Modelagem inicial
 
-O modelo organiza órgãos, itens e pedidos conforme as relações e regras do enunciado. O ZIP já foi analisado, mas a importação ainda não foi implementada. As migrações criam a estrutura vazia. O tratamento previsto para o legado e o destino dos registros não aproveitáveis estão descritos no [README](../README.md#tratamento-dos-dados-legados).
+O modelo organiza órgãos, itens e pedidos conforme as relações e regras do enunciado. As migrações criam a estrutura vazia; a importação usa tabelas separadas para preparação, lotes e ocorrências. A massa completa foi processada em teste isolado e sua publicação foi bloqueada pelas inconsistências. O tratamento do legado e o destino dos registros não aproveitáveis estão descritos no [README](../README.md#tratamento-dos-dados-legados).
 
 ```mermaid
 erDiagram
@@ -64,7 +64,7 @@ As restrições SQL não garantem sozinhas que um pedido tenha pelo menos uma li
 mvn -Dtest=SchemaIntegrationTest test
 ```
 
-Os testes de esquema executam Flyway e verificam restrições com SQL direto em H2 no modo PostgreSQL. Cada teste tem rollback. A suíte independe das classes de negócio. Adicionalmente, `OrdersPostgresTest` executa as operações de pedidos e estoque no PostgreSQL 15 real, incluindo concorrência e rollback. A carga histórica e seu desempenho ainda precisam de validação própria.
+Os testes de esquema executam Flyway e verificam restrições com SQL direto em H2 no modo PostgreSQL. Cada teste tem rollback. A suíte independe das classes de negócio. Adicionalmente, `OrdersPostgresTest` executa as operações de pedidos e estoque no PostgreSQL 15 real, incluindo concorrência e rollback. A suíte de importação usa PostgreSQL e RabbitMQ reais e inclui teste optativo com a massa completa; os resultados estão no [guia de importação](importacao.md#resultado-da-massa-original).
 
 ## Uso de IA nesta etapa
 

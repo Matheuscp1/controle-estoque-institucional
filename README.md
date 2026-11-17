@@ -11,7 +11,7 @@ Repositório: https://github.com/Matheuscp1/controle-estoque-institucional
 - `pom.xml`: dependências e build Maven.
 - `src/main/java/br/com/estoque/Application.java`: entrada da aplicação.
 - `src/main/resources/application.yml`: configuração do banco e da API.
-- `Dockerfile` e `compose.yaml`: aplicação e PostgreSQL 15.
+- `Dockerfile` e `compose.yaml`: aplicação, PostgreSQL 15 e RabbitMQ.
 
 ## Executar
 
@@ -22,6 +22,7 @@ docker compose up --build
 ```
 
 A aplicação usa a porta `8080`. O Flyway aplica as migrações automaticamente; estão disponíveis os endpoints de itens, órgãos e pedidos.
+No Compose, a importação inicial está habilitada: as APIs operacionais retornam `503` até a carga ser concluída e validada. Envie o ZIP pelo endpoint de importação seguindo [o guia de carga histórica](docs/importacao.md).
 O banco usa volume persistente. A senha padrão é apenas para desenvolvimento; configure `DB_PASSWORD` em `.env` para alterá-la.
 
 Para compilar com Java 17 e Maven:
@@ -34,7 +35,7 @@ Para executar sem Docker, disponibilize PostgreSQL, configure `DB_URL`, `DB_USER
 
 ## Arquitetura e API
 
-Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagonal)**. Uma única aplicação é organizada por funcionalidades, como itens, órgãos e pedidos. Dentro de cada módulo, as regras dependem de interfaces, enquanto os detalhes de HTTP e persistência ficam nos adaptadores externos. Os módulos `items`, `organizations` e `orders` seguem essa organização; a importação seguirá o mesmo padrão.
+Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagonal)**. Uma única aplicação é organizada por funcionalidades, como itens, órgãos e pedidos. Dentro de cada módulo, as regras dependem de interfaces, enquanto os detalhes de HTTP e persistência ficam nos adaptadores externos. Os módulos `items`, `organizations` e `orders` seguem essa organização. O módulo `imports` acrescenta validação do legado, processamento assíncrono e publicação integral da carga.
 
 | Camada | Responsabilidade |
 | --- | --- |
@@ -99,22 +100,22 @@ mvn "-Dtest=OrdersPostgresTest" test
 Para executar os testes sem Docker, excluindo explicitamente a suíte PostgreSQL:
 
 ```sh
-mvn "-Dtest=*,!OrdersPostgresTest" test
+mvn "-Dtest=*,!OrdersPostgresTest,!ImportQueueIntegrationTest" test
 ```
 
-Esses testes verificam regras e concorrência funcional; não comprovam desempenho com milhões de registros. A massa histórica foi analisada, mas a carga completa permanece pendente.
+Os testes pequenos verificam regras e concorrência funcional. A execução optativa da massa completa processou os 3.382.295 registros em preparação e terminou em `NEEDS_REVIEW`, sem publicar dados inconsistentes. Os tempos e limites dessa medição estão no [guia de importação](docs/importacao.md#resultado-da-massa-original).
 
 ## Tratamento dos dados legados
 
-**Estado atual:** o ZIP foi analisado por completo. Nenhum dado foi importado, corrigido ou descartado do arquivo original. O importador ainda não foi implementado; as políticas abaixo descrevem o tratamento planejado, não uma carga já executada.
+**Estado atual:** o importador lê o ZIP em fluxo, registra lotes, processa-os com RabbitMQ e JPA e valida os dados antes de publicar. O arquivo original é preservado. Consulte [execução, estados, retomada e decisões da importação](docs/importacao.md).
 
 Foram lidos 250 órgãos, 50.000 itens, 1.002.000 cabeçalhos de pedidos e 2.330.045 linhas de pedidos. A auditoria identificou 2.000 cabeçalhos extras idênticos, referências inexistentes, quantidades inválidas, 100 pedidos sem linhas e cancelamentos incompletos. Os números e suas limitações estão na [análise da massa](docs/analise-massa.md).
 
 A importação deverá respeitar as mesmas regras de negócio da operação online: saldo não negativo, pedido completo, identificador único e cancelamento sem devolução duplicada. A origem legada não autoriza inserir registros inválidos nas tabelas definitivas.
 
-| Situação | Tratamento planejado |
+| Situação | Tratamento |
 | --- | --- |
-| Cabeçalhos idênticos com o mesmo identificador | Manter uma ocorrência e registrar as duplicatas no relatório. |
+| Cabeçalhos equivalentes após normalização com o mesmo identificador | Consolidar em uma ocorrência e contabilizar as duplicatas na carga concluída. |
 | Mesmo identificador com conteúdos diferentes | Separar o pedido para análise, sem sobrescrever nenhuma ocorrência. |
 | Pedido sem linhas, com referência inexistente ou quantidade inválida | Rejeitar o pedido inteiro da carga definitiva, preservando os registros de origem para análise. |
 | Par pedido/item repetido | Separar o pedido até definir se é duplicação ou quantidade complementar; não somar nem descartar linhas silenciosamente. |
@@ -123,11 +124,13 @@ A importação deverá respeitar as mesmas regras de negócio da operação onli
 | Pedido histórico de item atualmente inativo | Preservar se válido: a inatividade atual não comprova que o item estava inativo na data do pedido. |
 | Divergência de saldo | Registrar e reconciliar após o saneamento; não corrigir silenciosamente nem descontar o histórico novamente sobre `saldo_atual`. |
 
-Os registros não aproveitáveis deverão ficar em uma área de rejeições, fora das tabelas operacionais, com arquivo de origem, número da linha, identificador do pedido ou item, conteúdo original e motivo. Quando uma linha invalidar um pedido, o relatório deverá relacionar todas as linhas desse pedido. O ZIP original deve ser preservado. Até aqui, o que existe é o relatório da auditoria; essa área de rejeições ainda será implementada.
+Os registros permanecem em `import_rows`, fora das tabelas operacionais, com arquivo de origem, linha lógica, identificador e conteúdo original. `import_issues` registra as inconsistências e pode ser consultada pela API com paginação. O ZIP original também é preservado.
 
-A carga será feita em Java, com leitura em fluxo, preparação dos dados e gravação em lotes. A definição do fuso das datas sem offset e a política final de reconciliação de saldo ainda precisam ser consolidadas. As 2.824 divergências encontradas são comparações brutas, anteriores ao saneamento, e não valores prontos para corrigir o banco.
+**A publicação é integral:** qualquer inconsistência deixa a carga em `NEEDS_REVIEW` e impede a publicação de todos os registros. Não publicamos uma parte do histórico com saldos possivelmente incoerentes. Após corrigir os dados de origem com justificativa, envie um novo ZIP. Reenviar exatamente o mesmo arquivo retorna a mesma carga. A massa fornecida contém problemas conhecidos e não deve ser liberada automaticamente para uso.
+
+A carga usa Java, leitura em fluxo, lotes de 500 registros e gravações JPA em batches de 50. As datas sem offset usam `America/Sao_Paulo`; horários ambíguos ou inexistentes são rejeitados. A validação global verifica o saldo final e reconstrói reservas e devoluções para detectar saldos históricos negativos. As 2.824 divergências da auditoria inicial são comparações brutas, anteriores ao saneamento, e não valores prontos para corrigir o banco. A publicação copia os saldos históricos sem executar novos débitos.
 
 
 ## Próximas etapas
 
-Finalizar a carga histórica com RabbitMQ sobre a base de itens, órgãos e pedidos, reutilizando as regras de validação sem debitar novamente o histórico. O código preliminar da fila permanece em desenvolvimento. Consolidar o saneamento e a reconciliação dos dados, validar falhas e reentregas da fila e medir desempenho com a massa histórica.
+Revisar as inconsistências da massa com o responsável pelos dados, preparar uma versão saneada com justificativas e validar sua publicação integral. Comparar configurações de lotes e consumidores em medições controladas antes de afirmar ganhos de desempenho com a fila.

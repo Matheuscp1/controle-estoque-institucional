@@ -1,0 +1,69 @@
+{
+    "sha256":  "3464840490783ee695eb1b0e00fb4b90c16f0aa22c1f36b9a899c2b560e3b467",
+    "status":  "NEEDS_REVIEW",
+    "rows":  3382295,
+    "batches":  6766,
+    "issues":  53856,
+    "prepareSeconds":  177.4265577,
+    "queueSeconds":  334.8757683,
+    "validationSeconds":  174.5087096,
+    "issuesByReason":  [
+                           {
+                               "reason":  "BALANCE_MISMATCH",
+                               "count":  2824
+                           },
+                           {
+                               "reason":  "Campo inválido",
+                               "count":  13586
+                           },
+                           {
+                               "reason":  "Cancelamento anterior ao pedido.",
+                               "count":  1
+                           },
+                           {
+                               "reason":  "DUPLICATE_ORDER_ITEM",
+                               "count":  4513
+                           },
+                           {
+                               "reason":  "EMPTY_ORDER",
+                               "count":  182
+                           },
+                           {
+                               "reason":  "NEGATIVE_HISTORICAL_BALANCE",
+                               "count":  1221
+                           },
+                           {
+                               "reason":  "Quantidade fora do intervalo",
+                               "count":  200
+                           },
+                           {
+                               "reason":  "UNKNOWN_ITEM",
+                               "count":  250
+                           },
+                           {
+                               "reason":  "UNKNOWN_ORDER",
+                               "count":  30786
+                           },
+                           {
+                               "reason":  "UNKNOWN_ORGANIZATION",
+                               "count":  293
+                           }
+                       ],
+    "javaProcessMemory":  {
+                              "peakWorkingSetBytes":  499224576,
+                              "measurement":  "Windows Java test-process peak working set; excludes database and broker",
+                              "samples":  46
+                          },
+    "environment":  {
+                        "consumers":  2,
+                        "java":  "22.0.2 (compilation target 17)",
+                        "stagesRunSequentially":  true,
+                        "postgres":  "15.20",
+                        "os":  "Windows / Docker Desktop",
+                        "recordsPerBatch":  500,
+                        "date":  "2026-11-17",
+                        "rabbitmqImage":  "rabbitmq:4-management",
+                        "isolatedTest":  true,
+                        "jdbcBatchSize":  50
+                    }
+}

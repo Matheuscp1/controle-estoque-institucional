@@ -2,7 +2,7 @@
 
 ## Decisão
 
-Monólito modular: uma aplicação Spring Boot, um PostgreSQL e módulos organizados por funcionalidade. Os módulos de itens, órgãos e pedidos estão implementados; a importação seguirá a mesma organização.
+Monólito modular: uma aplicação Spring Boot, um PostgreSQL e módulos organizados por funcionalidade. Itens, órgãos e pedidos usam portas e adaptadores. O módulo `imports` acrescenta processamento assíncrono com RabbitMQ, preparação de dados e validação global antes da publicação.
 
 Essa estrutura permite manter transações locais entre pedidos e estoque, necessárias para o atendimento integral, e subir o backend com um único serviço. O desafio não exige deploy ou escala independentes por funcionalidade, portanto microsserviços acrescentariam comunicação e coordenação de transações sem uma necessidade demonstrada.
 
@@ -74,10 +74,12 @@ Os testes unitários rodam sem Spring; os testes de API usam Spring, MockMvc, Fl
 mvn "-Dtest=ItemTest,ItemServiceTest,ItensApiTest" test
 ```
 
-Os testes de pedidos começaram pelo domínio e pelos contratos de aplicação/API, com falhas por tipos ainda ausentes. A mesma suíte de contrato roda em H2 e PostgreSQL 15 via Testcontainers. Ela cobre rollback de um pedido com vários itens, cancelamento único, reenvios concorrentes, saldo disputado, conflito de edição após movimentação, filtros e contrato HTTP. A conexão de teste H2 usa fuso UTC, alinhado ao binding JDBC do Hibernate; os instantes retornados pela criação e consulta também são comparados. H2 sozinho não comprova a concorrência específica do PostgreSQL. Medições de desempenho com a massa real continuam pendentes.
+Os testes de pedidos começaram pelo domínio e pelos contratos de aplicação/API, com falhas por tipos ainda ausentes. A mesma suíte de contrato roda em H2 e PostgreSQL 15 via Testcontainers. Ela cobre rollback de um pedido com vários itens, cancelamento único, reenvios concorrentes, saldo disputado, conflito de edição após movimentação, filtros e contrato HTTP. A conexão de teste H2 usa fuso UTC, alinhado ao binding JDBC do Hibernate; os instantes retornados pela criação e consulta também são comparados. H2 sozinho não comprova a concorrência específica do PostgreSQL. A massa real foi processada em teste isolado com PostgreSQL e RabbitMQ; os resultados e limites da medição estão no guia de importação.
 
-## Próximos módulos
+## Importação histórica
 
-Órgãos disponibiliza cadastro e consulta, com JPA e testes de duplicidade concorrente. Pedidos disponibiliza entidades de cabeçalho e linhas, reserva integral, idempotência, cancelamento único e consultas paginadas. A próxima etapa é integrar essa base à carga histórica com RabbitMQ.
+Órgãos disponibiliza cadastro e consulta, com JPA e testes de duplicidade concorrente. Pedidos disponibiliza entidades de cabeçalho e linhas, reserva integral, idempotência, cancelamento único e consultas paginadas. A carga histórica usa essa base e preserva os pedidos anteriores ao início da operação online.
 
-A fila já possui um protótipo local em desenvolvimento. Sua infraestrutura não substitui a implementação das regras de negócio. A importação deverá validar os dados legados e preservar seus saldos e situações, sem executar novamente os débitos de pedidos antigos. Os módulos compartilharão o banco, com adaptadores próprios e contratos explícitos para operações que atravessarem módulos.
+A fila usa lotes persistidos antes da publicação, confirmações do broker, consumidores com confirmação após commit e um marcador transacional de conclusão por lote. A porta `BatchProcessor` separa a entrega RabbitMQ da persistência JPA. `LegacyRow` valida campos sem Spring. Os coordenadores de preparação e publicação ficam na infraestrutura, assim como a validação global por SQL em conjunto, adequada às relações entre milhões de registros.
+
+O histórico permanece fora das tabelas operacionais até a validação integral. A promoção preserva seus saldos e situações, sem executar novamente os débitos de pedidos antigos. A aplicação online e a carga compartilham as restrições do banco; testes verificam que pedidos importados podem ser reenviados e cancelados pelo módulo `orders`. As premissas e a política de bloqueio integral estão no [guia de importação](importacao.md).
