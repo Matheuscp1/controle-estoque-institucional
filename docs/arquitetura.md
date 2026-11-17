@@ -2,7 +2,7 @@
 
 ## Decisão
 
-Monólito modular: uma aplicação Spring Boot, um PostgreSQL e módulos organizados por funcionalidade. O módulo de itens está implementado; órgãos, pedidos e importação seguirão a mesma organização.
+Monólito modular: uma aplicação Spring Boot, um PostgreSQL e módulos organizados por funcionalidade. Os módulos de itens e órgãos estão implementados; pedidos e importação seguirão a mesma organização.
 
 Essa estrutura permite manter transações locais entre pedidos e estoque, necessárias para o atendimento integral, e subir o backend com um único serviço. O desafio não exige deploy ou escala independentes por funcionalidade, portanto microsserviços acrescentariam comunicação e coordenação de transações sem uma necessidade demonstrada.
 
@@ -74,4 +74,6 @@ H2 não comprova a concorrência específica do PostgreSQL. Continuam pendentes 
 
 ## Próximos módulos
 
-Órgãos disponibilizará cadastro e consulta. Pedidos coordenará a reserva integral, a idempotência e o cancelamento único. Importação lerá os CSVs em Java, aplicará as regras e produzirá relatórios de rejeição. Os módulos compartilharão o banco, mas o SQL de cada funcionalidade ficará em seus adaptadores, com contratos explícitos para operações que atravessarem módulos.
+Órgãos já disponibiliza cadastro e consulta, com JPA e testes de duplicidade concorrente. A próxima etapa é pedidos: entidade de pedido, linhas, reserva integral, idempotência e cancelamento único. Somente depois essa base será integrada à carga histórica com RabbitMQ.
+
+A fila já possui um protótipo local em desenvolvimento. Sua infraestrutura não substitui a implementação das regras de negócio. A importação deverá validar os dados legados e preservar seus saldos e situações, sem executar novamente os débitos de pedidos antigos. Os módulos compartilharão o banco, com adaptadores próprios e contratos explícitos para operações que atravessarem módulos.

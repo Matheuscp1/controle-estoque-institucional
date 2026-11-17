@@ -1,6 +1,6 @@
 # controle-estoque-institucional
 
-Backend com modelagem e cadastro de itens em Java 17 e Spring Boot 2.7.18.
+Backend com modelagem, cadastro de itens e órgãos em Java 17 e Spring Boot 2.7.18.
 
 Projeto Maven: `br.com.estoque:controle-estoque-institucional`.
 Pacote Java: `br.com.estoque`.
@@ -21,7 +21,7 @@ Com Docker em execução:
 docker compose up --build
 ```
 
-A aplicação usa a porta `8080`. O Flyway aplica as migrações automaticamente; esta etapa oferece os endpoints de itens.
+A aplicação usa a porta `8080`. O Flyway aplica as migrações automaticamente; esta etapa oferece os endpoints de itens e órgãos.
 O banco usa volume persistente. A senha padrão é apenas para desenvolvimento; configure `DB_PASSWORD` em `.env` para alterá-la.
 
 Para compilar com Java 17 e Maven:
@@ -34,7 +34,7 @@ Para executar sem Docker, disponibilize PostgreSQL, configure `DB_URL`, `DB_USER
 
 ## Arquitetura e API
 
-Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagonal)**. Uma única aplicação é organizada por funcionalidades, como itens, órgãos e pedidos. Dentro de cada módulo, as regras dependem de interfaces, enquanto os detalhes de HTTP e persistência ficam nos adaptadores externos. O módulo de itens já segue essa organização; os demais serão implementados no mesmo padrão.
+Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagonal)**. Uma única aplicação é organizada por funcionalidades, como itens, órgãos e pedidos. Dentro de cada módulo, as regras dependem de interfaces, enquanto os detalhes de HTTP e persistência ficam nos adaptadores externos. Os módulos de itens e órgãos já seguem essa organização; os demais serão implementados no mesmo padrão.
 
 | Camada | Responsabilidade |
 | --- | --- |
@@ -44,6 +44,8 @@ Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagon
 | `infrastructure` | Adaptadores de persistência, entidades JPA e configuração dos componentes. |
 
 Consulte [a arquitetura e o ciclo TDD](docs/arquitetura.md) e [os contratos da API de itens](docs/api-itens.md).
+
+O módulo `organizations` oferece cadastro e consulta paginada de órgãos, validação de UF e proteção contra códigos duplicados. Consulte [os contratos da API de órgãos](docs/api-organizations.md).
 
 A persistência usa Spring Data JPA, com `@Entity` e `@Version` na infraestrutura. O domínio permanece independente do JPA. As migrações são gerenciadas pelo Flyway; o Hibernate valida o esquema existente.
 
@@ -110,4 +112,4 @@ A carga será feita em Java, com leitura em fluxo, preparação dos dados e grav
 
 ## Próximas etapas
 
-Implementar órgãos, pedidos e carga histórica na arquitetura modular, com TDD. Validar as operações concorrentes no PostgreSQL e medir desempenho com a massa histórica.
+Concluir o módulo de pedidos antes de integrar a importação: entidades de pedido e suas linhas, atendimento integral, idempotência, cancelamento único e consultas. Depois finalizar a carga histórica com RabbitMQ, reutilizando as regras de validação sem debitar novamente o histórico. O código preliminar da fila permanece em desenvolvimento. Validar as operações concorrentes no PostgreSQL e medir desempenho com a massa histórica.
