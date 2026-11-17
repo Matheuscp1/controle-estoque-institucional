@@ -1,6 +1,6 @@
 # controle-estoque-institucional
 
-Estrutura e modelagem inicial do backend em Java 17 e Spring Boot 2.7.18.
+Backend com modelagem e cadastro de itens em Java 17 e Spring Boot 2.7.18.
 
 Projeto Maven: `br.com.estoque:controle-estoque-institucional`.
 Pacote Java: `br.com.estoque`.
@@ -21,7 +21,7 @@ Com Docker em execução:
 docker compose up --build
 ```
 
-A aplicação usa a porta `8080`. O Flyway aplica as migrações automaticamente; esta etapa ainda não possui endpoints de negócio.
+A aplicação usa a porta `8080`. O Flyway aplica as migrações automaticamente; esta etapa oferece os endpoints de itens.
 O banco usa volume persistente. A senha padrão é apenas para desenvolvimento; configure `DB_PASSWORD` em `.env` para alterá-la.
 
 Para compilar com Java 17 e Maven:
@@ -32,6 +32,48 @@ mvn package
 
 Para executar sem Docker, disponibilize PostgreSQL, configure `DB_URL`, `DB_USER` e `DB_PASSWORD` e execute `mvn spring-boot:run`.
 
+## Arquitetura e API
+
+Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagonal)**. Uma única aplicação é organizada por funcionalidades, como itens, órgãos e pedidos. Dentro de cada módulo, as regras dependem de interfaces, enquanto os detalhes de HTTP e persistência ficam nos adaptadores externos. O módulo de itens já segue essa organização; os demais serão implementados no mesmo padrão.
+
+| Camada | Responsabilidade |
+| --- | --- |
+| `domain` | Objetos e regras de negócio, independentes de Spring e JPA. |
+| `application` | Casos de uso e interfaces de repositório, que representam as portas de saída. |
+| `api` | Adaptador de entrada HTTP: endpoints, requisições, respostas e tradução de erros. |
+| `infrastructure` | Adaptadores de persistência, entidades JPA e configuração dos componentes. |
+
+Consulte [a arquitetura e o ciclo TDD](docs/arquitetura.md) e [os contratos da API de itens](docs/api-itens.md).
+
+A persistência usa Spring Data JPA, com `@Entity` e `@Version` na infraestrutura. O domínio permanece independente do JPA. As migrações são gerenciadas pelo Flyway; o Hibernate valida o esquema existente.
+
+O módulo de itens oferece cadastro, consulta, edição, inativação lógica, filtros e paginação. A unidade é normalizada para maiúsculas, e edições exigem a versão atual do item.
+
+### Vantagens e custos dessa organização
+
+A principal vantagem é testar e alterar as regras sem depender do Spring ou do banco. Nos testes unitários, os casos de uso recebem repositórios simulados e um relógio fixo. Nos testes de integração, os adaptadores são verificados com a persistência real do ambiente de teste.
+
+A separação também reduz o impacto de mudanças técnicas. Neste projeto, a persistência de itens foi trocada de JDBC para JPA mantendo a interface do repositório e os casos de uso. As responsabilidades ficam localizadas: alterações no contrato HTTP pertencem à API; alterações no mapeamento do banco pertencem à infraestrutura.
+
+Manter uma única aplicação simplifica a execução pelo Docker Compose e permite transações locais entre pedidos e estoque. A arquitetura, por si só, não garante atomicidade nem protege contra concorrência: essas regras continuam exigindo transações, controle de versão, bloqueios quando necessários e testes.
+
+O custo é ter mais classes e conversões entre objetos de domínio e entidades persistentes. Para este desafio, essa separação ajuda a isolar e testar as regras de saldo, pedidos e importação. Criamos interfaces nos limites de dependência, sem exigir uma interface para toda classe.
+
+**SOLID** orienta a distribuição de responsabilidades e dependências entre as classes. **TDD** orienta o desenvolvimento por testes escritos antes da implementação. São práticas utilizadas no projeto, não nomes da arquitetura.
+
+### Configuração dos módulos e da persistência
+
+Cada módulo terá sua configuração na camada `infrastructure`, responsável por conectar os casos de uso e a persistência ao Spring. A configuração agrupa os componentes do módulo; não é necessário criar uma classe de configuração para cada entidade.
+
+- `@Configuration` identifica a classe de configuração.
+- `@EntityScan` informa os pacotes das entidades JPA.
+- `@EnableJpaRepositories` informa o pacote dos repositórios Spring Data.
+- `@Bean` cria os serviços de aplicação, fornecendo as implementações das interfaces de repositório e outras dependências necessárias, como um relógio para obter datas.
+
+Essa composição mantém os serviços de aplicação como classes Java comuns, sem `@Service` ou dependências do Spring. Os serviços dependem de interfaces de repositório, e não do JPA. Nos testes unitários, podemos construí-los diretamente com repositórios simulados e, quando necessário, um relógio fixo, sem iniciar a aplicação.
+
+Na estrutura atual, a aplicação principal poderia descobrir entidades e repositórios automaticamente por estarem abaixo de `br.com.estoque`. A busca explícita torna os limites dos módulos claros e permite carregar sua persistência nos testes isolados. Conforme novos módulos forem implementados, suas configurações deverão incluir os respectivos pacotes de entidades e repositórios.
+
 ## Banco e testes
 
 As migrações criam `orgaos`, `itens`, `pedidos` e `pedido_itens`, com restrições e índices. Veja [modelagem, premissas e uso de IA](docs/modelagem.md).
@@ -40,7 +82,7 @@ As migrações criam `orgaos`, `itens`, `pedidos` e `pedido_itens`, com restriç
 mvn test
 ```
 
-Os testes de integridade executam em H2 no modo PostgreSQL. A massa histórica foi analisada. A validação com PostgreSQL real e a implementação da carga continuam pendentes.
+Os testes unitários de itens executam sem Spring. Os testes de API e de integridade executam em H2 no modo PostgreSQL. A massa histórica foi analisada. A validação com PostgreSQL real e a implementação da carga continuam pendentes.
 
 ## Tratamento dos dados legados
 
@@ -68,4 +110,4 @@ A carga será feita em Java, com leitura em fluxo, preparação dos dados e grav
 
 ## Próximas etapas
 
-Implementar itens, pedidos, controle de concorrência, carga histórica e testes conforme o enunciado.
+Implementar órgãos, pedidos e carga histórica na arquitetura modular, com TDD. Validar as operações concorrentes no PostgreSQL e medir desempenho com a massa histórica.
