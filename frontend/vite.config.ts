@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [vue()],
     css: {
-      preprocessorOptions: { sass: { silenceDeprecations: ['slash-div'] } },
+      preprocessorOptions: { sass: { silenceDeprecations: ['slash-div', 'mixed-decls'] } },
     },
     server: {
       proxy: {
