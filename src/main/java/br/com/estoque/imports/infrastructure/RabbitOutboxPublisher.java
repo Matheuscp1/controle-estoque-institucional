@@ -15,7 +15,7 @@ public class RabbitOutboxPublisher {
     private final RabbitTemplate rabbit;
     public RabbitOutboxPublisher(ImportStore store,RabbitTemplate rabbit) {this.store=store;this.rabbit=rabbit;}
 
-    @Scheduled(fixedDelayString="${imports.publish-delay-ms:1000}",initialDelayString="${imports.initial-delay-ms:0}")
+    @Scheduled(fixedDelayString="${imports.publish-delay-ms:250}",initialDelayString="${imports.initial-delay-ms:0}")
     public void publish() {
         for(String id:store.claimDispatch()) {
             try {

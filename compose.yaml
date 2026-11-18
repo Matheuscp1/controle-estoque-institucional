@@ -5,6 +5,7 @@ services:
       RABBITMQ_DEFAULT_USER: estoque
       RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD:-estoque_local}
     ports:
+      - "127.0.0.1:5672:5672"
       - "127.0.0.1:15672:15672"
     volumes:
       - rabbit_data:/var/lib/rabbitmq
@@ -34,7 +35,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
-      DB_URL: jdbc:postgresql://db:5432/estoque
+      DB_URL: jdbc:postgresql://db:5432/estoque?reWriteBatchedInserts=true
       DB_USER: estoque
       DB_PASSWORD: ${DB_PASSWORD:-estoque_local}
       RABBIT_HOST: rabbitmq

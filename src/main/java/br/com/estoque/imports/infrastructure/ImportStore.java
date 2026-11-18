@@ -12,6 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class ImportStore {
     private final EntityManager em;
     private final ObjectMapper json;
+    @org.springframework.beans.factory.annotation.Value("${imports.dispatch-lease-seconds:300}")
+    private long dispatchLeaseSeconds;
     public ImportStore(EntityManager em,ObjectMapper json) { this.em=em;this.json=json; }
 
     public static String hash(String value) {
@@ -27,6 +29,7 @@ public class ImportStore {
         if (control.activeJob!=null) {
             var active=em.find(ImportJobEntity.class,control.activeJob);
             if (Set.of("PREPARING","STAGING").contains(active.status)) throw new IllegalStateException("Já existe uma carga em execução.");
+            if (!control.ready && Set.of("FAILED","NEEDS_REVIEW").contains(active.status)) replaceProvisional(active.id);
         }
         for (String table : List.of("orgaos","itens","pedidos")) {
             if (((Number)em.createNativeQuery("SELECT COUNT(*) FROM " + table).getSingleResult()).longValue()!=0)
@@ -43,7 +46,9 @@ public class ImportStore {
         if (job==null) throw new NoSuchElementException("Carga não encontrada.");
         long done=em.createQuery("SELECT COUNT(b) FROM ImportBatchEntity b WHERE b.jobId=:id AND b.done=true",Long.class).setParameter("id",id).getSingleResult();
         long issues=((Number)em.createNativeQuery("SELECT COUNT(*) FROM import_issues WHERE job_id=:id").setParameter("id",id).getSingleResult()).longValue();
-        return new ImportJobEntity.View(id,job.status,job.totalBatches,done,issues,job.duplicateHeaders,job.error);
+        long prepared=em.createQuery("SELECT COUNT(b) FROM ImportBatchEntity b WHERE b.jobId=:id",Long.class).setParameter("id",id).getSingleResult();
+        return new ImportJobEntity.View(id,job.status,job.totalBatches,done,issues,job.duplicateHeaders,job.error,
+                prepared,job.publishedOrganizations,job.publishedItems,job.publishedOrders,job.publishedOrderLines);
     }
 
     @Transactional(readOnly=true)
@@ -59,34 +64,50 @@ public class ImportStore {
 
     @Transactional
     public void addBatch(String jobId,String source,int index,BatchPayload payload) {
-        var job=em.find(ImportJobEntity.class,jobId,LockModeType.PESSIMISTIC_WRITE);
+        var job=lockJobWithoutBlockingReferences(jobId);
         if (!job.status.equals("PREPARING")) return;
         String id=hash(jobId+":"+source+":"+index);
         if(em.find(ImportBatchEntity.class,id)==null) {
             var batch=new ImportBatchEntity();batch.id=id;batch.jobId=jobId;batch.source=source;batch.batchNumber=index;
-            try { batch.payload=json.writeValueAsString(payload); } catch(Exception e) { throw new IllegalArgumentException(e); }
+            try {
+                batch.payload=json.writeValueAsString(payload);
+                if(source.equals("pedido_itens.csv")) {
+                    var counts=new TreeMap<String,Long>();
+                    for(var row:payload.rows()) {
+                        String key=row.fields().get("id_externo_pedido");
+                        if(key!=null)counts.merge(key.substring(0,Math.min(key.length(),128)),1L,Long::sum);
+                    }
+                    batch.orderCounts=json.writeValueAsString(counts);
+                }
+            } catch(Exception e) { throw new IllegalArgumentException(e); }
             batch.nextPublish=OffsetDateTime.now();em.persist(batch);
         }
         job.leaseUntil=OffsetDateTime.now().plusMinutes(5);
     }
 
     @Transactional
+    public void sourcePrepared(String id,String source,int batches) {
+        em.createNativeQuery("INSERT INTO import_sources(job_id,source,expected_batches) VALUES (:id,:source,:batches) ON CONFLICT(job_id,source) DO UPDATE SET expected_batches=EXCLUDED.expected_batches")
+                .setParameter("id",id).setParameter("source",source).setParameter("batches",batches).executeUpdate();
+    }
+
+    @Transactional
     public void preparationDone(String id,int total) {
-        var job=em.find(ImportJobEntity.class,id,LockModeType.PESSIMISTIC_WRITE);
+        var job=lockJobWithoutBlockingReferences(id);
         if(job.status.equals("PREPARING")) {job.totalBatches=total;job.status="STAGING";job.leaseUntil=null;}
     }
 
     @Transactional
     public void preparationFailed(String id,String error) {
-        var job=em.find(ImportJobEntity.class,id,LockModeType.PESSIMISTIC_WRITE);
+        var job=lockJobWithoutBlockingReferences(id);
         if(job.status.equals("PREPARING")) { job.status="FAILED";job.error=truncate(error); }
     }
 
     @Transactional
     public List<String> claimDispatch() {
-        var batches=em.createQuery("SELECT b FROM ImportBatchEntity b, ImportJobEntity j WHERE b.jobId=j.id AND j.status IN ('PREPARING','STAGING') AND b.done=false AND b.attempts<8 AND b.nextPublish<=:now ORDER BY b.nextPublish,b.id",ImportBatchEntity.class)
-                .setParameter("now",OffsetDateTime.now()).setMaxResults(16).setLockMode(LockModeType.PESSIMISTIC_WRITE).getResultList();
-        for(var batch:batches) batch.nextPublish=OffsetDateTime.now().plusSeconds(60);
+        var batches=em.createQuery("SELECT b FROM ImportBatchEntity b WHERE EXISTS (SELECT j.id FROM ImportJobEntity j WHERE b.jobId=j.id AND j.status IN ('PREPARING','STAGING')) AND b.done=false AND b.attempts<8 AND b.nextPublish<=:now ORDER BY b.nextPublish,b.id",ImportBatchEntity.class)
+                .setParameter("now",OffsetDateTime.now()).setMaxResults(128).setLockMode(LockModeType.PESSIMISTIC_WRITE).getResultList();
+        for(var batch:batches) batch.nextPublish=OffsetDateTime.now().plusSeconds(Math.max(1,dispatchLeaseSeconds));
         return batches.stream().map(b->b.id).toList();
     }
 
@@ -106,15 +127,22 @@ public class ImportStore {
         var control=em.find(ImportControlEntity.class,1,LockModeType.PESSIMISTIC_WRITE);
         var job=em.find(ImportJobEntity.class,id,LockModeType.PESSIMISTIC_WRITE);
         if(job==null) throw new NoSuchElementException("Carga não encontrada.");
-        if(!id.equals(control.activeJob)||!job.status.equals("FAILED")) throw new IllegalStateException("Somente a carga ativa com falha técnica pode ser retomada.");
+        boolean legacyReview=job.status.equals("NEEDS_REVIEW")&&!job.manifestReady;
+        if(!id.equals(control.activeJob)||(!job.status.equals("FAILED")&&!legacyReview))
+            throw new IllegalStateException("Somente falhas técnicas ou cargas antigas sem inserção incremental podem ser retomadas.");
         em.createQuery("UPDATE ImportBatchEntity b SET b.attempts=0,b.error=null,b.nextPublish=:now WHERE b.jobId=:id AND b.done=false")
                 .setParameter("now",OffsetDateTime.now()).setParameter("id",id).executeUpdate();
         job.status=job.totalBatches==0?"PREPARING":"STAGING";job.leaseUntil=null;job.error=null;
     }
 
     @Transactional(readOnly=true)
+    public List<String> awaitingPublication() {
+        return em.createQuery("SELECT j.id FROM ImportJobEntity j WHERE j.status IN ('PREPARING','STAGING')",String.class).getResultList();
+    }
+
+    @Transactional(readOnly=true)
     public List<String> awaitingValidation() {
-        return em.createQuery("SELECT j.id FROM ImportJobEntity j WHERE j.status='STAGING' AND NOT EXISTS (SELECT b.id FROM ImportBatchEntity b WHERE b.jobId=j.id AND b.done=false)",String.class).getResultList();
+        return em.createQuery("SELECT j.id FROM ImportJobEntity j WHERE j.status='STAGING' AND j.manifestReady=true AND NOT EXISTS (SELECT b.id FROM ImportBatchEntity b WHERE b.jobId=j.id AND (b.done=false OR (b.source='pedido_itens.csv' AND b.publicationDone=false)))",String.class).getResultList();
     }
 
     @Transactional(readOnly=true)
@@ -128,4 +156,23 @@ public class ImportStore {
             for(int i=0;i<keys.length;i++) result.put(keys[i],row[i]);return result; }).toList();
     }
     static String truncate(String text) { return text==null?"Falha sem detalhe":text.substring(0,Math.min(1400,text.length())); }
+
+    private ImportJobEntity lockJobWithoutBlockingReferences(String id) {
+        em.createNativeQuery("SELECT id FROM import_jobs WHERE id=:id FOR NO KEY UPDATE").setParameter("id",id).getSingleResult();
+        return em.find(ImportJobEntity.class,id);
+    }
+
+    private void replaceProvisional(String id) {
+        // Chamado sob lock exclusivo do controle. Preserva dados online e todos os arquivos/linhas de origem.
+        for(String table:List.of("orgaos","itens","pedidos")) {
+            long foreign=((Number)em.createNativeQuery("SELECT COUNT(*) FROM "+table+" WHERE import_job_id IS NULL OR import_job_id<>:id")
+                    .setParameter("id",id).getSingleResult()).longValue();
+            if(foreign>0) throw new IllegalStateException("Há dados fora da carga provisória. Substituição automática bloqueada.");
+        }
+        em.createNativeQuery("DELETE FROM pedido_itens WHERE pedido_id IN (SELECT id FROM pedidos WHERE import_job_id=:id)").setParameter("id",id).executeUpdate();
+        for(String table:List.of("pedidos","itens","orgaos"))
+            em.createNativeQuery("DELETE FROM "+table+" WHERE import_job_id=:id").setParameter("id",id).executeUpdate();
+        em.createNativeQuery("UPDATE import_jobs SET published_orgs=0,published_items=0,published_orders=0,published_lines=0 WHERE id=:id")
+                .setParameter("id",id).executeUpdate();
+    }
 }

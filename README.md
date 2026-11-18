@@ -35,7 +35,7 @@ Para executar sem Docker, disponibilize PostgreSQL, configure `DB_URL`, `DB_USER
 
 ## Arquitetura e API
 
-Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagonal)**. Uma única aplicação é organizada por funcionalidades, como itens, órgãos e pedidos. Dentro de cada módulo, as regras dependem de interfaces, enquanto os detalhes de HTTP e persistência ficam nos adaptadores externos. Os módulos `items`, `organizations` e `orders` seguem essa organização. O módulo `imports` acrescenta validação do legado, processamento assíncrono e publicação integral da carga.
+Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagonal)**. Uma única aplicação é organizada por funcionalidades, como itens, órgãos e pedidos. Dentro de cada módulo, as regras dependem de interfaces, enquanto os detalhes de HTTP e persistência ficam nos adaptadores externos. Os módulos `items`, `organizations` e `orders` seguem essa organização. O módulo `imports` acrescenta validação do legado, processamento assíncrono, inserts incrementais e liberação integral da carga para uso.
 
 | Camada | Responsabilidade |
 | --- | --- |
@@ -103,11 +103,11 @@ Para executar os testes sem Docker, excluindo explicitamente a suíte PostgreSQL
 mvn "-Dtest=*,!OrdersPostgresTest,!ImportQueueIntegrationTest" test
 ```
 
-Os testes pequenos verificam regras e concorrência funcional. A execução optativa da massa completa processou os 3.382.295 registros em preparação e terminou em `NEEDS_REVIEW`, sem publicar dados inconsistentes. Os tempos e limites dessa medição estão no [guia de importação](docs/importacao.md#resultado-da-massa-original).
+Os testes pequenos verificam regras e concorrência funcional. Na implementação anterior, a execução optativa da massa completa processou os 3.382.295 registros em preparação e terminou em `NEEDS_REVIEW`, sem publicação operacional. A medição completa do fluxo incremental ainda está pendente: a execução local foi interrompida por falta de espaço em disco. Os resultados e limites estão no [guia de importação](docs/importacao.md#resultado-da-massa-original).
 
 ## Tratamento dos dados legados
 
-**Estado atual:** o importador lê o ZIP em fluxo, registra lotes, processa-os com RabbitMQ e JPA e valida os dados antes de publicar. O arquivo original é preservado. Consulte [execução, estados, retomada e decisões da importação](docs/importacao.md).
+**Estado atual:** o importador realiza inserts incrementais. Órgãos e itens entram após o processamento de seus arquivos; cada pedido entra com todas as suas linhas, sem esperar a validação global. O acesso operacional permanece bloqueado até reconciliar o histórico. Consulte [execução, estados, retomada e decisões da importação](docs/importacao.md).
 
 Foram lidos 250 órgãos, 50.000 itens, 1.002.000 cabeçalhos de pedidos e 2.330.045 linhas de pedidos. A auditoria identificou 2.000 cabeçalhos extras idênticos, referências inexistentes, quantidades inválidas, 100 pedidos sem linhas e cancelamentos incompletos. Os números e suas limitações estão na [análise da massa](docs/analise-massa.md).
 
@@ -126,7 +126,7 @@ A importação deverá respeitar as mesmas regras de negócio da operação onli
 
 Os registros permanecem em `import_rows`, fora das tabelas operacionais, com arquivo de origem, linha lógica, identificador e conteúdo original. `import_issues` registra as inconsistências e pode ser consultada pela API com paginação. O ZIP original também é preservado.
 
-**A publicação é integral:** qualquer inconsistência deixa a carga em `NEEDS_REVIEW` e impede a publicação de todos os registros. Não publicamos uma parte do histórico com saldos possivelmente incoerentes. Após corrigir os dados de origem com justificativa, envie um novo ZIP. Reenviar exatamente o mesmo arquivo retorna a mesma carga. A massa fornecida contém problemas conhecidos e não deve ser liberada automaticamente para uso.
+**Os inserts são incrementais; a liberação para uso é integral.** Qualquer inconsistência deixa a carga em `NEEDS_REVIEW`, com o acesso operacional bloqueado. Registros inseridos ficam identificados por `import_job_id` como provisórios. Uma versão corrigida pode substituir somente esses registros enquanto o sistema estiver bloqueado, preservando arquivos e linhas de origem. Dados online ou de fora da carga nunca são apagados automaticamente. Reenviar exatamente o mesmo arquivo retorna a mesma carga.
 
 A carga usa Java, leitura em fluxo, lotes de 500 registros e gravações JPA em batches de 50. As datas sem offset usam `America/Sao_Paulo`; horários ambíguos ou inexistentes são rejeitados. A validação global verifica o saldo final e reconstrói reservas e devoluções para detectar saldos históricos negativos. As 2.824 divergências da auditoria inicial são comparações brutas, anteriores ao saneamento, e não valores prontos para corrigir o banco. A publicação copia os saldos históricos sem executar novos débitos.
 

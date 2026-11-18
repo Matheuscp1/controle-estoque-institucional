@@ -1,6 +1,6 @@
 # Modelagem inicial
 
-O modelo organiza órgãos, itens e pedidos conforme as relações e regras do enunciado. As migrações criam a estrutura vazia; a importação usa tabelas separadas para preparação, lotes e ocorrências. A massa completa foi processada em teste isolado e sua publicação foi bloqueada pelas inconsistências. O tratamento do legado e o destino dos registros não aproveitáveis estão descritos no [README](../README.md#tratamento-dos-dados-legados).
+O modelo organiza órgãos, itens e pedidos conforme as relações e regras do enunciado. A importação usa tabelas de preparação, lotes, manifesto e ocorrências. A migração V4 acrescenta `import_job_id` às tabelas de órgãos, itens e pedidos para identificar inserts provisórios. As linhas do pedido pertencem à mesma transação do cabeçalho. A API só libera acesso após reconciliar o histórico. O tratamento do legado está no [README](../README.md#tratamento-dos-dados-legados).
 
 ```mermaid
 erDiagram

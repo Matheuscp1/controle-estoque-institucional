@@ -25,8 +25,10 @@ public class ImportConfiguration {
     @Bean RabbitOutboxPublisher rabbitOutboxPublisher(ImportStore store,RabbitTemplate rabbit) {rabbit.setMandatory(true);return new RabbitOutboxPublisher(store,rabbit);}
     @Bean RabbitBatchListener rabbitBatchListener(BatchProcessor processor,ImportStore store) {return new RabbitBatchListener(processor,store);}
     @Bean ImportFinalizer importFinalizer(EntityManager em) {return new ImportFinalizer(em);}
+    @Bean IncrementalImportPublisher incrementalImportPublisher(EntityManager em) {return new IncrementalImportPublisher(em);}
+    @Bean IncrementalPublicationScheduler incrementalPublicationScheduler(ImportStore store,IncrementalImportPublisher publisher) {return new IncrementalPublicationScheduler(store,publisher);}
     @Bean ValidationScheduler validationScheduler(ImportStore store,ImportFinalizer finalizer) {return new ValidationScheduler(store,finalizer);}
-    @Bean ThreadPoolTaskScheduler taskScheduler() {var scheduler=new ThreadPoolTaskScheduler();scheduler.setPoolSize(3);scheduler.setThreadNamePrefix("imports-");return scheduler;}
+    @Bean ThreadPoolTaskScheduler taskScheduler() {var scheduler=new ThreadPoolTaskScheduler();scheduler.setPoolSize(4);scheduler.setThreadNamePrefix("imports-");return scheduler;}
     @Bean Declarables importQueues() {
         var exchange=new DirectExchange("imports.exchange",true,false);
         var deadExchange=new DirectExchange("imports.dead",true,false);

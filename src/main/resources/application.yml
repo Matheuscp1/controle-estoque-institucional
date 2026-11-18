@@ -24,7 +24,7 @@ spring:
       hibernate.jdbc.batch_size: 50
       hibernate.order_inserts: true
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/estoque}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/estoque?reWriteBatchedInserts=true}
     username: ${DB_USER:estoque}
     password: ${DB_PASSWORD:estoque_local}
     hikari:
@@ -36,6 +36,6 @@ server:
   error:
     include-message: never
 imports:
-  enabled: ${IMPORTS_ENABLED:false}
+  enabled: ${IMPORTS_ENABLED:true}
   directory: ${IMPORTS_DIRECTORY:./import-data}
   consumers: ${IMPORT_CONSUMERS:2}

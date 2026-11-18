@@ -2,7 +2,7 @@
 
 ## Decisão
 
-Monólito modular: uma aplicação Spring Boot, um PostgreSQL e módulos organizados por funcionalidade. Itens, órgãos e pedidos usam portas e adaptadores. O módulo `imports` acrescenta processamento assíncrono com RabbitMQ, preparação de dados e validação global antes da publicação.
+Monólito modular: uma aplicação Spring Boot, um PostgreSQL e módulos organizados por funcionalidade. Itens, órgãos e pedidos usam portas e adaptadores. O módulo `imports` acrescenta RabbitMQ, preparação de dados, inserts incrementais e validação global antes da liberação para uso.
 
 Essa estrutura permite manter transações locais entre pedidos e estoque, necessárias para o atendimento integral, e subir o backend com um único serviço. O desafio não exige deploy ou escala independentes por funcionalidade, portanto microsserviços acrescentariam comunicação e coordenação de transações sem uma necessidade demonstrada.
 
@@ -82,4 +82,8 @@ Os testes de pedidos começaram pelo domínio e pelos contratos de aplicação/A
 
 A fila usa lotes persistidos antes da publicação, confirmações do broker, consumidores com confirmação após commit e um marcador transacional de conclusão por lote. A porta `BatchProcessor` separa a entrega RabbitMQ da persistência JPA. `LegacyRow` valida campos sem Spring. Os coordenadores de preparação e publicação ficam na infraestrutura, assim como a validação global por SQL em conjunto, adequada às relações entre milhões de registros.
 
-O histórico permanece fora das tabelas operacionais até a validação integral. A promoção preserva seus saldos e situações, sem executar novamente os débitos de pedidos antigos. A aplicação online e a carga compartilham as restrições do banco; testes verificam que pedidos importados podem ser reenviados e cancelados pelo módulo `orders`. As premissas e a política de bloqueio integral estão no [guia de importação](importacao.md).
+O catálogo é inserido após o término do respectivo arquivo. Para pedidos, um manifesto registra o número esperado de linhas antes de autorizar o insert. A inserção usa SQL em conjunto via `EntityManager`: cabeçalho e linhas entram na mesma transação, e a chave única de identificador externo impede duplicação entre lotes concorrentes. O marcador do lote e os contadores são atualizados somente se a transação concluir.
+
+`import_job_id` identifica os dados provisórios. Um lock compartilhado no controle permite inserts concorrentes, enquanto a substituição de uma carga e a liberação final exigem lock exclusivo. O leitor usa `FOR NO KEY UPDATE` na linha da carga: esse lock protege suas alterações sem bloquear o `KEY SHARE` usado pelas referências dos consumidores. O teste de concorrência mantém essa referência aberta e verifica que a preparação consegue avançar.
+
+Os inserts preservam saldos e situações históricos, sem executar novos débitos. A API continua bloqueada até a reconciliação completa. Uma carga corrigida pode substituir somente dados provisórios da carga anterior; arquivos e preparação permanecem para auditoria. Testes verificam que pedidos liberados podem ser reenviados e cancelados pelo módulo `orders`. As premissas estão no [guia de importação](importacao.md).
