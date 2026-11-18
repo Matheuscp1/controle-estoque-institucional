@@ -25,10 +25,11 @@
   </v-dialog>
 </template>
 
-<script>
-import { errorMessage, request } from './api'
+<script lang="ts">
+import Vue from 'vue'
+import { errorMessage, request, type Order } from './api'
 
-export default {
+export default Vue.extend({
   props: { order: { type: Object, required: true } },
   data: () => ({ reason: '', busy: false, error: '', alreadyCancelled: false }),
   computed: {
@@ -61,7 +62,7 @@ export default {
     },
     async checkStatus() {
       try {
-        const order = await request(this.orderPath)
+        const order = await request<Order>(this.orderPath)
         if (order.situacao === 'CANCELADO') {
           this.alreadyCancelled = true
           this.error = 'Este pedido já foi cancelado.'
@@ -72,5 +73,5 @@ export default {
       }
     },
   },
-}
+})
 </script>

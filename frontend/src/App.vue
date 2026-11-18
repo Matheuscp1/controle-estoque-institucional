@@ -25,7 +25,8 @@
   </v-app>
 </template>
 
-<script>
+<script lang="ts">
+import Vue from 'vue'
 import ItemsView from './ItemsView.vue'
 import OrdersView from './OrdersView.vue'
 
@@ -33,7 +34,7 @@ function currentSection() {
   return window.location.hash === '#pedidos' ? 'pedidos' : 'itens'
 }
 
-export default {
+export default Vue.extend({
   components: { ItemsView, OrdersView },
   data: () => ({ section: currentSection() }),
   mounted() {
@@ -47,5 +48,5 @@ export default {
       this.section = currentSection()
     },
   },
-}
+})
 </script>

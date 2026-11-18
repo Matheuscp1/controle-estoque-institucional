@@ -23,16 +23,17 @@
   </v-dialog>
 </template>
 
-<script>
+<script lang="ts">
+import Vue from 'vue'
 import { LosslessNumber } from 'lossless-json'
-import { errorMessage, request } from './api'
+import { errorMessage, request, type Item } from './api'
 import { decimalInput } from './decimal'
 
-function editFields({ descricao, unidade, saldo, ativo, versao }) {
+function editFields({ descricao, unidade, saldo, ativo, versao }: Item) {
   return { descricao, unidade, saldo: String(saldo).replace('.', ','), ativo, versao }
 }
 
-export default {
+export default Vue.extend({
   props: { item: { type: Object, required: true } },
   data() {
     return { draft: editFields(this.item), busy: false, needsReload: false, error: '' }
@@ -80,7 +81,7 @@ export default {
     async reload() {
       this.busy = true
       try {
-        this.draft = editFields(await request(this.itemPath))
+        this.draft = editFields(await request<Item>(this.itemPath))
         this.needsReload = false
         this.error = ''
       } catch (error) {
@@ -90,5 +91,5 @@ export default {
       }
     },
   },
-}
+})
 </script>

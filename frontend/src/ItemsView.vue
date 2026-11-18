@@ -77,21 +77,22 @@
   </div>
 </template>
 
-<script>
+<script lang="ts">
+import Vue from 'vue'
 import CursorList from './CursorList.vue'
 import EditItemDialog from './EditItemDialog.vue'
-import { request } from './api'
+import { request, type Item } from './api'
 import { decimalInput, decimalMilliunits, formatDecimal } from './decimal'
 
 const emptyFilters = () => ({ descricao: '', unidade: '', saldoMin: '', saldoMax: '' })
 
-export default {
+export default Vue.extend({
   components: { CursorList, EditItemDialog },
   data: () => ({ draft: emptyFilters(), filters: {}, filterError: '', editing: null, saved: false }),
   methods: {
     formatDecimal,
     fetchItems(filters, depois, limite, signal) {
-      return request('/itens', { params: { ...filters, depois, limite }, signal })
+      return request<Item[]>('/itens', { params: { ...filters, depois, limite }, signal })
     },
     applyFilters() {
       this.filterError = ''
@@ -118,5 +119,5 @@ export default {
       this.$refs.results.refresh()
     },
   },
-}
+})
 </script>

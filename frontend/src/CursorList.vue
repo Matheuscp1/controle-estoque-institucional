@@ -23,10 +23,11 @@
   </section>
 </template>
 
-<script>
+<script lang="ts">
+import Vue from 'vue'
 import { errorMessage } from './api'
 
-export default {
+export default Vue.extend({
   props: {
     title: { type: String, required: true },
     emptyMessage: { type: String, required: true },
@@ -100,5 +101,5 @@ export default {
       }
     },
   },
-}
+})
 </script>

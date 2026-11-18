@@ -145,16 +145,17 @@
   </div>
 </template>
 
-<script>
+<script lang="ts">
+import Vue from 'vue'
 import CursorList from './CursorList.vue'
 import CancelOrderDialog from './CancelOrderDialog.vue'
-import { errorMessage, request } from './api'
+import { errorMessage, request, type Order, type Organization } from './api'
 import { formatDecimal } from './decimal'
 
 const emptyFilters = () => ({ codigo: null, firstDay: '', lastDay: '', situacao: '' })
 const dateFormat = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 
-export default {
+export default Vue.extend({
   components: { CursorList, CancelOrderDialog },
   data: () => ({
     draft: emptyFilters(),
@@ -195,7 +196,7 @@ export default {
         let depois
         let page
         do {
-          page = await request('/orgaos', { params: { depois, limite }, signal: pending.signal })
+          page = await request<Organization[]>('/orgaos', { params: { depois, limite }, signal: pending.signal })
           organizations.push(...page.map((org) => ({
             codigo: org.codigo,
             label: `${org.sigla} · ${org.nome} (${org.codigo})`,
@@ -211,7 +212,7 @@ export default {
       }
     },
     fetchOrders({ codigo, ...filters }, antes, limite, signal) {
-      return request(`/orgaos/${encodeURIComponent(codigo)}/pedidos`, {
+      return request<Order[]>(`/orgaos/${encodeURIComponent(codigo)}/pedidos`, {
         params: { ...filters, antes, limite },
         signal,
       })
@@ -251,5 +252,5 @@ export default {
       this.refreshOrders()
     },
   },
-}
+})
 </script>
