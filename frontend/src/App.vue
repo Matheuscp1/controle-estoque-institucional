@@ -27,8 +27,8 @@
 
 <script lang="ts">
 import Vue from 'vue'
-import ItemsView from './ItemsView.vue'
-import OrdersView from './OrdersView.vue'
+import ItemsView from './views/items/ItemsView.vue'
+import OrdersView from './views/orders/OrdersView.vue'
 
 function currentSection() {
   return window.location.hash === '#pedidos' ? 'pedidos' : 'itens'

@@ -25,7 +25,7 @@
 
 <script lang="ts">
 import Vue from 'vue'
-import { errorMessage } from './api'
+import { errorMessage } from '../services/api'
 
 export default Vue.extend({
   props: {

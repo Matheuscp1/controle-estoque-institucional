@@ -26,8 +26,8 @@
 <script lang="ts">
 import Vue from 'vue'
 import { LosslessNumber } from 'lossless-json'
-import { errorMessage, request, type Item } from './api'
-import { decimalInput } from './decimal'
+import { errorMessage, request, type Item } from '../../../services/api'
+import { decimalInput } from '../../../utils/decimal'
 
 function editFields({ descricao, unidade, saldo, ativo, versao }: Item) {
   return { descricao, unidade, saldo: String(saldo).replace('.', ','), ativo, versao }

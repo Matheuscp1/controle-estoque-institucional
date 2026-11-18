@@ -27,7 +27,7 @@
 
 <script lang="ts">
 import Vue from 'vue'
-import { errorMessage, request, type Order } from './api'
+import { errorMessage, request, type Order } from '../../../services/api'
 
 export default Vue.extend({
   props: { order: { type: Object, required: true } },

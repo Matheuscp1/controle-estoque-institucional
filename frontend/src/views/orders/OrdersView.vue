@@ -147,10 +147,10 @@
 
 <script lang="ts">
 import Vue from 'vue'
-import CursorList from './CursorList.vue'
-import CancelOrderDialog from './CancelOrderDialog.vue'
-import { errorMessage, request, type Order, type Organization } from './api'
-import { formatDecimal } from './decimal'
+import CursorList from '../../components/CursorList.vue'
+import CancelOrderDialog from './components/CancelOrderDialog.vue'
+import { errorMessage, request, type Order, type Organization } from '../../services/api'
+import { formatDecimal } from '../../utils/decimal'
 
 const emptyFilters = () => ({ codigo: null, firstDay: '', lastDay: '', situacao: '' })
 const dateFormat = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })

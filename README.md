@@ -24,6 +24,16 @@ docker compose up --build
 
 A interface fica em `http://localhost:8081`. O Nginx encaminha `/api` ao back-end na porta `8080` do host. Para outro endereço acessível ao contêiner, configure `API_UPSTREAM` no serviço `frontend` do Compose.
 
+## Testes e TDD
+
+No diretório `frontend`, execute `npm test` para os testes unitários e de componentes, ou `npm run test:watch` durante o desenvolvimento. O ciclo de TDD é: escrever um teste para o comportamento esperado, confirmar que falha, implementar a alteração e executar novamente os testes e `npm run typecheck`.
+
+Os testes cobrem valores decimais, contrato HTTP, paginação com cancelamento de requisições, edição de item e cancelamento de pedido. As chamadas à API são simuladas; esses testes não dependem do back-end em execução.
+
+## Organização do código
+
+`frontend/src/views/items` e `frontend/src/views/orders` contêm as telas e seus componentes específicos. `frontend/src/components` reúne componentes usados por mais de uma tela; `services` concentra o acesso à API; `utils` guarda funções sem dependência da interface. Os testes ficam ao lado dos arquivos testados.
+
 ## Funcionalidades
 
 - Consulta de itens por descrição, unidade e faixa de saldo, com paginação por cursor.

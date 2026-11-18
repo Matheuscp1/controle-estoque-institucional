@@ -79,10 +79,10 @@
 
 <script lang="ts">
 import Vue from 'vue'
-import CursorList from './CursorList.vue'
-import EditItemDialog from './EditItemDialog.vue'
-import { request, type Item } from './api'
-import { decimalInput, decimalMilliunits, formatDecimal } from './decimal'
+import CursorList from '../../components/CursorList.vue'
+import EditItemDialog from './components/EditItemDialog.vue'
+import { request, type Item } from '../../services/api'
+import { decimalInput, decimalMilliunits, formatDecimal } from '../../utils/decimal'
 
 const emptyFilters = () => ({ descricao: '', unidade: '', saldoMin: '', saldoMax: '' })
 
