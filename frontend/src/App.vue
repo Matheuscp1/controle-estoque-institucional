@@ -19,7 +19,7 @@
     <v-main>
       <main class="workspace">
         <ItemsView v-if="section === 'itens'" />
-        <h1 v-else>Pedidos por órgão</h1>
+        <OrdersView v-else />
       </main>
     </v-main>
   </v-app>
@@ -27,13 +27,14 @@
 
 <script>
 import ItemsView from './ItemsView.vue'
+import OrdersView from './OrdersView.vue'
 
 function currentSection() {
   return window.location.hash === '#pedidos' ? 'pedidos' : 'itens'
 }
 
 export default {
-  components: { ItemsView },
+  components: { ItemsView, OrdersView },
   data: () => ({ section: currentSection() }),
   mounted() {
     window.addEventListener('hashchange', this.updateSection)
