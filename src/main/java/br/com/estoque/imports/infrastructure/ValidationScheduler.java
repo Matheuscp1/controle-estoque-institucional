@@ -12,7 +12,7 @@ public class ValidationScheduler {
     @Scheduled(fixedDelayString="${imports.validate-delay-ms:5000}",initialDelayString="${imports.initial-delay-ms:0}")
     public void validate() {
         for(String id:store.awaitingValidation()) {
-            try {finalizer.finish(id);} catch(Exception e){LOG.error("Validação da carga {} falhou e será repetida",id,e);}
+            try {finalizer.finish(id);} catch(Exception e){store.validationFailed(id,e.getMessage());LOG.error("Validação da carga {} falhou; consulte o estado e o erro registrados",id,e);}
         }
     }
 }

@@ -9,5 +9,9 @@ import org.springframework.stereotype.Repository;
 public class JpaOrganizationLookup implements OrganizationLookup {
     private final EntityManager entityManager;
     public JpaOrganizationLookup(EntityManager entityManager) { this.entityManager = entityManager; }
-    @Override public boolean exists(String code) { return entityManager.find(OrganizationEntity.class, code) != null; }
+    @Override public boolean exists(String code) {
+        if(br.com.estoque.imports.infrastructure.ImportQuarantine.contains(entityManager,"ORGANIZATION",code))
+            throw new br.com.estoque.orders.domain.OrderErrors.Conflict("Órgão com pendência na importação: "+code);
+        return entityManager.find(OrganizationEntity.class, code) != null;
+    }
 }

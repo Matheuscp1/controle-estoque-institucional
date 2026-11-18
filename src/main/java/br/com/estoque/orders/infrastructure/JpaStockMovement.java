@@ -20,6 +20,8 @@ public class JpaStockMovement implements StockMovement {
         for (var line : lines.stream().sorted(Comparator.comparing(OrderLine::itemCode)).toList()) {
             var entity = entityManager.find(ItemEntity.class, line.itemCode(), LockModeType.PESSIMISTIC_WRITE);
             if (entity == null) throw new OrderErrors.NotFound("Item não encontrado: " + line.itemCode());
+            if (br.com.estoque.imports.infrastructure.ImportQuarantine.contains(entityManager,"ITEM",line.itemCode()))
+                throw new OrderErrors.Conflict("Item com pendência na importação: "+line.itemCode());
             try {
                 var item = entity.toDomain();
                 entity.alterar(reserve ? item.reservar(line.quantity()) : item.devolver(line.quantity()));

@@ -55,6 +55,7 @@ class ImportQueueIntegrationTest {
     @Autowired RabbitOutboxPublisher publisher;
     @Autowired ImportFinalizer finalizer;
     @Autowired IncrementalImportPublisher incremental;
+    @Autowired ImportReview review;
     @Autowired BatchProcessor processor;
     @Autowired JdbcTemplate db;
     @Autowired RabbitTemplate messages;
@@ -93,15 +94,117 @@ class ImportQueueIntegrationTest {
 
     @Test void saldoIncoerenteBloqueiaUsoMesmoComInsertsProvisorios() throws Exception {
         String id=start(archive(true,false,false));stageDirectly(id);finalizer.finish(id);
-        assertThat(store.status(id).status()).isEqualTo("NEEDS_REVIEW");
+        assertThat(store.status(id).status()).isEqualTo("COMPLETED_WITH_ISSUES");
         assertThat(db.queryForObject("SELECT COUNT(*) FROM itens",Integer.class)).isEqualTo(1);
-        assertThat(store.ready()).isFalse();
+        assertThat(store.ready()).isTrue();
         assertThat(store.issues(id,0,100)).anySatisfy(issue->{
             assertThat(issue.get("motivo").toString()).startsWith("BALANCE_MISMATCH");
             assertThat(issue.get("linha")).isNotNull();
             assertThat(issue.get("original")).isNotNull();
         });
-        mvc.perform(get("/api/itens")).andExpect(status().isServiceUnavailable());
+        mvc.perform(get("/api/imports/"+id)).andExpect(status().isOk());
+    }
+
+    @Test void revisaoCorrigeSaldoSemApagarOrigemOuMovimentosDeItensLiberados() throws Exception {
+        String id=start(archive(true,false,true));stageDirectly(id);finalizer.finish(id);
+        assertThat(store.status(id).status()).isEqualTo("COMPLETED_WITH_ISSUES");
+        var requestA=new br.com.estoque.orders.domain.NewOrder("ONLINE-A","O","Maria",br.com.estoque.orders.domain.OrderSource.PORTAL,
+                List.of(new br.com.estoque.orders.domain.OrderLine("A",new java.math.BigDecimal("1"))));
+        assertThatThrownBy(()->orders.create(requestA)).isInstanceOf(br.com.estoque.orders.domain.OrderErrors.Conflict.class);
+        orders.create(new br.com.estoque.orders.domain.NewOrder("ONLINE-B","O","Maria",br.com.estoque.orders.domain.OrderSource.PORTAL,
+                List.of(new br.com.estoque.orders.domain.OrderLine("B",new java.math.BigDecimal("1")))));
+        String original=db.queryForObject("SELECT raw_payload FROM import_rows WHERE source='itens.csv' AND record_key='A'",String.class);
+        var fields=new com.fasterxml.jackson.databind.ObjectMapper().readValue(original,Map.class);
+        fields.put("saldo_atual","7");
+        String correction=new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of("fields",fields,"revision",0,"justification","Conferido no histórico"));
+        mvc.perform(put("/api/imports/"+id+"/rows/itens.csv/2").contentType("application/json").content(correction)).andExpect(status().isOk());
+        mvc.perform(put("/api/imports/"+id+"/rows/itens.csv/2").contentType("application/json").content(correction)).andExpect(status().isConflict());
+        mvc.perform(post("/api/imports/"+id+"/reprocess")).andExpect(status().isAccepted());
+        db.execute("ALTER TABLE itens ADD CONSTRAINT test_review_rollback CHECK(saldo<>7)");
+        try {
+            assertThatThrownBy(()->finalizer.finish(id)).isInstanceOf(RuntimeException.class);
+            assertThat(store.status(id).status()).isEqualTo("REVIEW_PENDING");
+            assertThat(store.status(id).issues()).isPositive();
+            assertThat(db.queryForObject("SELECT saldo FROM itens WHERE codigo='A'",java.math.BigDecimal.class)).isEqualByComparingTo("8");
+            store.validationFailed(id,"Falha técnica simulada");
+            assertThat(store.status(id).status()).isEqualTo("COMPLETED_WITH_ISSUES");
+            assertThat(store.status(id).error()).isEqualTo("Falha técnica simulada");
+        } finally {db.execute("ALTER TABLE itens DROP CONSTRAINT test_review_rollback");}
+        review.reprocess(id);
+        finalizer.finish(id);
+        assertThat(store.status(id).status()).isEqualTo("COMPLETED");
+        assertThat(store.status(id).issues()).isZero();
+        assertThat(db.queryForObject("SELECT raw_payload FROM import_rows WHERE source='itens.csv' AND record_key='A'",String.class)).isEqualTo(original);
+        assertThat(db.queryForObject("SELECT count(*) FROM import_corrections",Integer.class)).isEqualTo(1);
+        assertThat(db.queryForObject("SELECT saldo FROM itens WHERE codigo='B'",java.math.BigDecimal.class)).isEqualByComparingTo("9");
+        orders.create(requestA);
+        assertThat(db.queryForObject("SELECT saldo FROM itens WHERE codigo='A'",java.math.BigDecimal.class)).isEqualByComparingTo("6");
+    }
+
+    @Test void cadastroManualDeItemAusentePublicaPedidoInteiroMesmoComOutraPendencia() throws Exception {
+        String id=start(archive(false,true,false));stageDirectly(id);finalizer.finish(id);
+        String body=new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of("revision",0,"justification","Cadastro recuperado do legado",
+                "fields",Map.of("codigo","INEXISTENTE","descricao","Recuperado","unidade","UN","saldo_inicial","13","saldo_atual","10","ativo","S","data_cadastro","2020-01-01")));
+        mvc.perform(post("/api/imports/"+id+"/rows/itens.csv").contentType("application/json").content(body)).andExpect(status().isCreated());
+        mvc.perform(post("/api/imports/"+id+"/reprocess")).andExpect(status().isAccepted());
+        finalizer.finish(id);
+        assertThat(store.status(id).status()).isEqualTo("COMPLETED_WITH_ISSUES");
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM pedidos WHERE id_externo='P1'",Integer.class)).isEqualTo(1);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM pedido_itens l JOIN pedidos p ON p.id=l.pedido_id WHERE p.id_externo='P1'",Integer.class)).isEqualTo(1);
+        assertThat(store.issues(id,0,100)).allSatisfy(issue->assertThat(issue.get("motivo").toString()).startsWith("BALANCE_MISMATCH"));
+        orders.create(new br.com.estoque.orders.domain.NewOrder("ONLINE-RECUPERADO","O","Maria",br.com.estoque.orders.domain.OrderSource.PORTAL,
+                List.of(new br.com.estoque.orders.domain.OrderLine("INEXISTENTE",new java.math.BigDecimal("1")))));
+        assertThat(db.queryForObject("SELECT saldo FROM itens WHERE codigo='INEXISTENTE'",java.math.BigDecimal.class)).isEqualByComparingTo("9");
+    }
+
+    @Test void duplicataIdenticaPodeSerDesconsideradaComAuditoriaSemRemoverUltimaLinha() throws Exception {
+        String id=start(archive(false,false,false));stageDirectly(id);
+        Long originalId=db.queryForObject("SELECT id FROM pedidos WHERE id_externo='P1'",Long.class);
+        db.update("INSERT INTO import_rows(job_id,source,line_number,record_key,reference_key,raw_payload,payload) SELECT job_id,source,99,record_key,reference_key,raw_payload,payload FROM import_rows WHERE source='pedido_itens.csv' AND line_number=2");
+        finalizer.finish(id);
+        String body="{\"revision\":0,\"justification\":\"Duplicação confirmada na origem\"}";
+        mvc.perform(post("/api/imports/"+id+"/rows/pedido_itens.csv/3/exclude-duplicate").contentType("application/json").content(body)).andExpect(status().isConflict());
+        mvc.perform(post("/api/imports/"+id+"/rows/pedido_itens.csv/99/exclude-duplicate").contentType("application/json").content(body)).andExpect(status().isNoContent());
+        mvc.perform(post("/api/imports/"+id+"/reprocess")).andExpect(status().isAccepted());
+        finalizer.finish(id);
+        assertThat(store.status(id).status()).isEqualTo("COMPLETED");
+        assertThat(db.queryForObject("SELECT id FROM pedidos WHERE id_externo='P1'",Long.class)).isEqualTo(originalId);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM pedido_itens",Integer.class)).isEqualTo(2);
+        assertThat(db.queryForObject("SELECT excluded FROM import_rows WHERE line_number=99",Boolean.class)).isTrue();
+        assertThat(store.issues(id,0,100,true)).isNotEmpty();
+        assertThat(store.issues(id,0,100)).isEmpty();
+    }
+
+    @Test void cargaAntigaConcluidaEmRevisaoRecebeLiberacaoParcial() throws Exception {
+        String id=start(archive(true,false,true));stageDirectly(id);
+        db.update("UPDATE import_jobs SET status='NEEDS_REVIEW' WHERE id=?",id);
+        assertThat(store.awaitingValidation()).contains(id);
+        finalizer.finish(id);
+        assertThat(store.status(id).status()).isEqualTo("COMPLETED_WITH_ISSUES");
+        assertThat(store.ready()).isTrue();
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM import_quarantine WHERE entity_type='ITEM' AND record_key='B'",Integer.class)).isZero();
+    }
+
+    @Test void correcoesConcorrentesExigemRevisaoENaoAlteramItensJaLiberados() throws Exception {
+        String id=start(archive(true,false,true));stageDirectly(id);finalizer.finish(id);
+        var fields=Map.of("codigo","A","descricao","Papel","unidade","UN","saldo_inicial","10","saldo_atual","7","ativo","S","data_cadastro","2020-01-01");
+        var correction=new ImportReview.Correction(fields,0,"Conferência do saldo");
+        var pool=Executors.newFixedThreadPool(2);var start=new CountDownLatch(1);
+        Callable<Boolean> change=()->{start.await();try{review.correct(id,"itens.csv",2,correction);return true;}catch(IllegalStateException conflict){return false;}};
+        try {
+            var a=pool.submit(change);var b=pool.submit(change);start.countDown();
+            assertThat(List.of(a.get(20,TimeUnit.SECONDS),b.get(20,TimeUnit.SECONDS))).containsExactlyInAnyOrder(true,false);
+        }finally{pool.shutdownNow();}
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM import_corrections",Integer.class)).isEqualTo(1);
+        var released=new HashMap<>(fields);released.put("codigo","B");released.put("saldo_atual","10");
+        assertThatThrownBy(()->review.correct(id,"itens.csv",3,new ImportReview.Correction(released,0,"Não pode alterar histórico liberado")))
+                .isInstanceOf(IllegalStateException.class);
+        review.reprocess(id);review.reprocess(id);
+        assertThatThrownBy(()->review.correct(id,"itens.csv",2,new ImportReview.Correction(fields,1,"Durante reprocessamento")))
+                .isInstanceOf(IllegalStateException.class);
+        finalizer.finish(id);
+        assertThat(store.status(id).status()).isEqualTo("COMPLETED");
+        assertThat(store.status(id).issues()).isZero();
     }
 
     @Test void cancelamentoLegadoSemMotivoEntraSemOcorrenciaENaoDevolveSaldoNovamente() throws Exception {
@@ -120,7 +223,7 @@ class ImportQueueIntegrationTest {
 
     @Test void referenciaInexistenteNaoImportaParteDoPedido() throws Exception {
         String id=start(archive(false,true,false));stageDirectly(id);finalizer.finish(id);
-        assertThat(store.status(id).status()).isEqualTo("NEEDS_REVIEW");
+        assertThat(store.status(id).status()).isEqualTo("COMPLETED_WITH_ISSUES");
         assertThat(db.queryForObject("SELECT COUNT(*) FROM pedidos WHERE id_externo='P1'",Integer.class)).isZero();
         assertThat(db.queryForObject("SELECT COUNT(*) FROM pedidos WHERE id_externo='P2'",Integer.class)).isEqualTo(1);
         assertThat(store.issues(id,0,100)).anySatisfy(issue->assertThat(issue.get("motivo").toString()).startsWith("UNKNOWN_ITEM"));
@@ -158,7 +261,7 @@ class ImportQueueIntegrationTest {
         for(String batch:db.queryForList("SELECT id FROM import_batches",String.class))processor.process(batch);
         publishAll(id);
         finalizer.finish(id);
-        assertThat(store.status(id).status()).isEqualTo("NEEDS_REVIEW");
+        assertThat(store.status(id).status()).isEqualTo("COMPLETED_WITH_ISSUES");
         assertThat(store.issues(id,0,100)).anySatisfy(issue->{assertThat(issue.get("arquivo")).isEqualTo("itens.csv");assertThat(issue.get("original")).isNotNull();});
     }
 
@@ -205,8 +308,8 @@ class ImportQueueIntegrationTest {
         assertThat(db.queryForObject("SELECT COUNT(*) FROM import_rows WHERE job_id=?",Long.class,id)).isEqualTo(3382295L);
         finalizer.finish(id);
         var result=store.status(id);
-        assertThat(result.status()).isEqualTo("NEEDS_REVIEW");
-        assertThat(store.ready()).isFalse();
+        assertThat(result.status()).isEqualTo("COMPLETED_WITH_ISSUES");
+        assertThat(store.ready()).isTrue();
         assertThat(result.publishedOrders()).isPositive();
         assertThat(db.queryForObject("SELECT COUNT(*) FROM pedidos p WHERE NOT EXISTS (SELECT 1 FROM pedido_itens l WHERE l.pedido_id=p.id)",Long.class)).isZero();
         var report=new LinkedHashMap<String,Object>();
@@ -337,16 +440,20 @@ class ImportQueueIntegrationTest {
     }
 
     private String start(byte[] data) throws IOException {return store.register(archives.store(new ByteArrayInputStream(data)));}
-    @Test void novaVersaoSubstituiSomenteDadosProvisoriosEPreservaOrigem() throws Exception {
+    @Test void cargaAntigaNaoLiberadaPodeSerSubstituidaPreservandoOrigem() throws Exception {
         String old=start(archive(true,false,false));stageDirectly(old);finalizer.finish(old);
-        assertThat(store.status(old).status()).isEqualTo("NEEDS_REVIEW");
+        assertThat(store.status(old).status()).isEqualTo("COMPLETED_WITH_ISSUES");
         assertThat(store.status(old).publishedOrders()).isEqualTo(2);
+        db.update("UPDATE import_jobs SET status='NEEDS_REVIEW' WHERE id=?",old);
+        db.update("UPDATE import_control SET ready=false WHERE id=1");
         String next=start(archive(false,false,false));
         assertThat(next).isNotEqualTo(old);
         assertThat(db.queryForObject("SELECT COUNT(*) FROM pedidos",Integer.class)).isZero();
         assertThat(db.queryForObject("SELECT COUNT(*) FROM import_rows WHERE job_id=?",Integer.class,old)).isPositive();
         stageDirectly(next);finalizer.finish(next);
         assertThat(store.status(next).status()).isEqualTo("COMPLETED");
+        orders.create(new br.com.estoque.orders.domain.NewOrder("ONLINE-NOVA-CARGA","O","Maria",br.com.estoque.orders.domain.OrderSource.PORTAL,
+                List.of(new br.com.estoque.orders.domain.OrderLine("A",new java.math.BigDecimal("1")))));
     }
 
     @Test void substituicaoNaoApagaDadosDeForaDaCarga() throws Exception {
@@ -363,7 +470,7 @@ class ImportQueueIntegrationTest {
         db.update("UPDATE import_rows SET payload=replace(payload,'Maria','Outra pessoa') WHERE source='pedidos.csv' AND line_number=3");
         publishAll(id);finalizer.finish(id);
         assertThat(db.queryForObject("SELECT COUNT(*) FROM pedidos WHERE id_externo='P1'",Integer.class)).isZero();
-        assertThat(store.status(id).status()).isEqualTo("NEEDS_REVIEW");
+        assertThat(store.status(id).status()).isEqualTo("COMPLETED_WITH_ISSUES");
     }
 
     @Test void cargaAntigaEmRevisaoPodeRetomarSomenteAsInsercoesIncrementais() throws Exception {
@@ -375,7 +482,7 @@ class ImportQueueIntegrationTest {
         assertThat(store.status(id).completedBatches()).isEqualTo(4);
         publishAll(id);finalizer.finish(id);
         assertThat(store.status(id).publishedOrders()).isEqualTo(2);
-        assertThat(store.status(id).status()).isEqualTo("NEEDS_REVIEW");
+        assertThat(store.status(id).status()).isEqualTo("COMPLETED_WITH_ISSUES");
         assertThatThrownBy(()->store.retry(id)).isInstanceOf(IllegalStateException.class);
     }
 

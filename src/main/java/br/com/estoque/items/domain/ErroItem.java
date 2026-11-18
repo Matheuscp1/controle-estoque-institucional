@@ -13,6 +13,7 @@ public final class ErroItem {
 
     public static class Conflito extends RuntimeException {
         public Conflito() { super("Item alterado por outra operação. Recarregue antes de salvar."); }
+        public Conflito(String message) {super(message);}
     }
 
     public static class CodigoDuplicado extends RuntimeException {

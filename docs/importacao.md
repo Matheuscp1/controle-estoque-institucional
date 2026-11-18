@@ -38,13 +38,15 @@ O relatório usa cursor: envie como `after` o último `id` retornado. Cada ocorr
 | --- | --- |
 | `PREPARING` | O ZIP está sendo lido em fluxo e os lotes estão sendo registrados. |
 | `STAGING` | A leitura terminou; os consumidores e as inserções incrementais podem continuar. |
-| `NEEDS_REVIEW` | Há inconsistências; os registros inseridos permanecem provisórios e indisponíveis pela API. |
+| `NEEDS_REVIEW` | Estado da versão anterior, convertido após revalidação para o novo fluxo. |
+| `COMPLETED_WITH_ISSUES` | Processamento concluído; ocorrências disponíveis para tratamento e somente os dados afetados ficam protegidos. |
+| `REVIEW_PENDING` | Correções aguardam revalidação assíncrona; os dados já liberados continuam utilizáveis. |
 | `COMPLETED` | A reconciliação terminou e o acesso operacional foi liberado. |
 | `FAILED` | Falha técnica ou de formato requer intervenção e eventual retomada. |
 
 O endpoint `retry` retoma a carga ativa em `FAILED`, preservando lotes concluídos. Também permite retomar uma carga antiga em `NEEDS_REVIEW` que ainda não tenha o manifesto incremental da migração V4: suas linhas preparadas são reaproveitadas, sem reler o ZIP. Isso não corrige inconsistências de origem.
 
-Para corrigir dados em `NEEDS_REVIEW`, preserve o ZIP original, prepare uma versão corrigida com justificativas e envie o novo ZIP. Enquanto o acesso estiver bloqueado, a nova carga substitui somente os registros provisórios vinculados à anterior por `import_job_id`, na mesma transação que registra a nova carga. Se houver registros de fora da carga, a substituição é recusada. Arquivos, lotes e linhas originais permanecem para auditoria. Uma carga concluída nunca é substituída automaticamente. Reenviar exatamente o mesmo arquivo retorna a mesma carga.
+Para corrigir dados, use os [endpoints de revisão manual](revisao-importacao.md). Cargas antigas em `NEEDS_REVIEW` com todos os lotes e inserts terminados são revalidadas pelo agendador após iniciar a versão atual. A substituição por outro ZIP permanece apenas para cargas antigas ou falhas ainda não liberadas; uma carga liberada, inclusive com pendências, nunca é substituída automaticamente. Reenviar exatamente o mesmo arquivo retorna a mesma carga.
 
 Enquanto a importação estiver habilitada e não houver uma carga concluída, as APIs operacionais respondem `503`. As APIs de importação continuam disponíveis. Para desenvolvimento sem RabbitMQ, desabilite explicitamente o módulo com `IMPORTS_ENABLED=false`.
 
@@ -54,7 +56,7 @@ Enquanto a importação estiver habilitada e não houver uma carga concluída, a
 2. Após a leitura do ZIP, um manifesto calcula quantas linhas cada pedido deve receber, a partir dos lotes persistidos. Isso não exige que os consumidores tenham terminado. Como o CSV pode estar fora de ordem, a primeira linha recebida não indica um pedido completo.
 3. Cada lote consumido de linhas identifica pedidos candidatos. Um pedido entra somente quando todas as linhas chegaram, o cabeçalho é válido e inequívoco, as referências existem e não há pares pedido/item repetidos.
 4. Cabeçalho, linhas, contadores e marcador são gravados na mesma transação. Uma falha desfaz esse lote; outros lotes já gravados permanecem.
-5. A conferência global reconcilia o saldo final e o histórico. Somente então libera o acesso operacional. Ter linhas nas tabelas não significa que a carga esteja aprovada para uso.
+5. A conferência global reconcilia o saldo final e o histórico. A carga termina em `COMPLETED` ou `COMPLETED_WITH_ISSUES`. As pendências geram restrições específicas para impedir movimentações inconsistentes, permitindo operar os demais dados.
 
 `GET /api/imports/{id}` inclui `preparedBatches`, `completedBatches`, `publishedOrganizations`, `publishedItems`, `publishedOrders` e `publishedOrderLines`. Os quatro últimos contadores representam inserts provisórios concluídos. Durante `PREPARING`, `totalBatches` ainda pode ser zero porque o leitor não conhece o total final.
 
@@ -70,15 +72,17 @@ O lote guarda contagens compactas por pedido para evitar reler seu JSON completo
 
 A inserção incremental usa SQL em conjunto pelo `EntityManager`. A chave única `pedidos.id_externo` decide entre transações concorrentes; `ON CONFLICT DO NOTHING RETURNING` retorna somente os pedidos realmente criados, e suas linhas são inseridas na mesma instrução. A ordem de inserção dos identificadores é determinística. Marcadores e contadores são transacionais, inclusive quando lotes diferentes contêm linhas do mesmo pedido.
 
+O agrupamento `complete_lines` usa `MATERIALIZED` para calcular a completude e a assinatura dos pedidos uma vez por lote. Na investigação de uma carga lenta em 18/11/2026, o plano anterior repetia esse agrupamento 499 vezes no lote analisado. Uma comparação somente de leitura da seleção dos mesmos candidatos levou 11,74 s antes e 0,56 s com materialização. Essa medição isolada, com a importação ativa, não inclui os inserts nem permite extrapolar a duração total da carga.
+
 `import_rows` preserva campos originais e normalizados. `import_sources` registra o término de cada arquivo e `import_order_manifest` registra a quantidade esperada de linhas por pedido. A validação global verifica referências, duplicidades, saldo final e saldo histórico sem depender da ordem das mensagens.
 
 ## Política de consistência
 
-Esta implementação adota **inserts incrementais e liberação integral para uso**. Qualquer inconsistência deixa a carga em `NEEDS_REVIEW`, com o acesso operacional bloqueado. Pedidos inválidos não são inseridos parcialmente. Registros originais e ocorrências permanecem para análise; não são silenciosamente descartados, somados nem corrigidos.
+Esta implementação adota **inserts incrementais e conclusão com pendências**. Inconsistências deixam a carga em `COMPLETED_WITH_ISSUES`. Os itens afetados não podem ser editados, reservados ou receber devoluções; pedidos pendentes não podem ser cancelados nem ter seu identificador reutilizado. As demais operações continuam disponíveis. Consultas podem mostrar registros provisórios; consulte `/quarantine` para identificar as restrições. Registros originais e ocorrências permanecem para análise.
 
-- Cabeçalhos equivalentes após normalização são consolidados e contabilizados. Cabeçalhos divergentes com a mesma chave impedem a carga.
-- Pares pedido/item repetidos impedem a carga, mesmo se a quantidade for igual: não é possível inferir se são duplicações ou parcelas complementares.
-- Referências inexistentes, quantidades inválidas, pedidos sem itens e cancelamentos sem data válida impedem a carga. O motivo do cancelamento é opcional no legado; vazio ou somente espaços é normalizado para ausência, sem gerar ocorrência. Quando informado, seu limite continua sendo 500 caracteres.
+- Cabeçalhos equivalentes após normalização são consolidados. Cabeçalhos divergentes com a mesma chave ficam pendentes.
+- Pares pedido/item repetidos deixam o pedido inteiro pendente. Uma cópia comprovadamente idêntica pode ser desconsiderada pelo endpoint específico, com justificativa e preservação do original.
+- Referências inexistentes, quantidades inválidas, pedidos sem itens e cancelamentos sem data válida ficam pendentes. O motivo do cancelamento é opcional no legado; vazio ou somente espaços é normalizado para ausência, sem gerar ocorrência. Quando informado, seu limite continua sendo 500 caracteres.
 - Unidades são normalizadas com remoção dos espaços das extremidades e conversão para maiúsculas. Os campos originais permanecem disponíveis.
 - Datas sem fuso são interpretadas em `America/Sao_Paulo`. Horários ambíguos ou inexistentes por transição de fuso são rejeitados.
 - O saldo final deve corresponder ao saldo inicial menos os pedidos confirmados. O histórico de reservas e devoluções também não pode produzir saldo negativo. Na ausência de uma ordem conhecida para eventos simultâneos, reservas precedem devoluções; essa premissa conservadora pode exigir revisão de casos do legado.
@@ -95,11 +99,11 @@ Cada pedido completo é inserido atomicamente, com suas linhas. A carga copia os
 | `BALANCE_MISMATCH` | Revisar saldo inicial, saldo atual e histórico com o responsável pelos dados. Não escolher automaticamente um saldo nem excluir pedidos para fechar a conta. |
 | `EMPTY_ORDER` | Rejeitar o pedido sem linhas válidas e preservar sua origem. A regra 2 exige um ou mais itens; excluir o pedido da carga aproveitada é diferente de remover essa validação. |
 
-A revisão pode resultar em correção ou exclusão justificada na próxima versão do arquivo. O original e o motivo da rejeição permanecem registrados. Depois de qualquer alteração, referências e saldos precisam ser revalidados. O bloqueio de toda a carga enquanto há ocorrências é uma decisão desta implementação, e não uma exigência explícita de que todo registro legado seja recuperado.
+A revisão registra correções justificadas e revalida referências e saldos. O original e as ocorrências anteriores permanecem registrados. A conclusão com pendências não transforma um registro inconsistente em válido.
 
 `EMPTY_ORDER` não se refere ao motivo de cancelamento. Pedidos legados cancelados sem motivo podem ser inseridos quando os demais dados forem válidos. A data de cancelamento continua obrigatória para reconstruir o histórico de saldo. Na API de novos cancelamentos, o motivo continua obrigatório.
 
-As demais ocorrências podem ser corrigidas e aproveitadas posteriormente por uma nova versão do ZIP. Atualmente não há endpoint para editar ou reprocessar uma ocorrência individual. Reenviar o mesmo arquivo retorna a carga existente e não revalida suas linhas; a alteração desta regra também não reprocessa automaticamente cargas antigas. Uma versão corrigida com conteúdo diferente passa novamente por todas as regras e pela reconciliação dos saldos.
+As ocorrências podem ser corrigidas pelos endpoints de linhas e aproveitadas após `POST /api/imports/{id}/reprocess`. O reprocessamento usa a preparação persistida, sem reler o ZIP e sem repetir os lotes RabbitMQ. Alterações nos registros já liberados são recusadas para preservar a operação online. Consulte os contratos e limites no [guia de revisão](revisao-importacao.md).
 
 ## Testes
 
@@ -113,7 +117,7 @@ A suíte exige Docker e cria PostgreSQL e RabbitMQ isolados. A massa completa é
 mvn "-Dtest=ImportQueueIntegrationTest#massaCompletaPassaPelaFilaEPreservaInconsistencias" "-Dmass.file=massa-dados/massa-dados-candidato.zip" test
 ```
 
-Esse teste verifica os 3.382.295 registros da massa fornecida, gera `target/import-incremental-report.json` com tempos, primeiros inserts e ocorrências e espera `NEEDS_REVIEW`, pois o arquivo contém inconsistências conhecidas. Leitura, fila e inserções ocorrem simultaneamente. Os containers de teste são descartados ao final; o ZIP local e o relatório permanecem. O teste não altera o banco do Docker Compose.
+Esse teste verifica os 3.382.295 registros da massa fornecida, gera `target/import-incremental-report.json` com tempos, primeiros inserts e ocorrências e espera `COMPLETED_WITH_ISSUES`, pois o arquivo contém inconsistências conhecidas. Leitura, fila e inserções ocorrem simultaneamente. Os containers de teste são descartados ao final; o ZIP local e o relatório permanecem. O teste não altera o banco do Docker Compose.
 
 RabbitMQ permite desacoplar preparação e consumo, controlar concorrência e recuperar falhas. A existência da fila não prova ganho de velocidade: os tempos medidos dependem do banco, disco, tamanho de lote e número de consumidores.
 

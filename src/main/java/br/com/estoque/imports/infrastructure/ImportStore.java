@@ -28,7 +28,7 @@ public class ImportStore {
         if (existing!=null) return existing.id;
         if (control.activeJob!=null) {
             var active=em.find(ImportJobEntity.class,control.activeJob);
-            if (Set.of("PREPARING","STAGING").contains(active.status)) throw new IllegalStateException("Já existe uma carga em execução.");
+            if (Set.of("PREPARING","STAGING","REVIEW_PENDING").contains(active.status)) throw new IllegalStateException("Já existe uma carga em execução.");
             if (!control.ready && Set.of("FAILED","NEEDS_REVIEW").contains(active.status)) replaceProvisional(active.id);
         }
         for (String table : List.of("orgaos","itens","pedidos")) {
@@ -45,7 +45,7 @@ public class ImportStore {
         var job=em.find(ImportJobEntity.class,id);
         if (job==null) throw new NoSuchElementException("Carga não encontrada.");
         long done=em.createQuery("SELECT COUNT(b) FROM ImportBatchEntity b WHERE b.jobId=:id AND b.done=true",Long.class).setParameter("id",id).getSingleResult();
-        long issues=((Number)em.createNativeQuery("SELECT COUNT(*) FROM import_issues WHERE job_id=:id").setParameter("id",id).getSingleResult()).longValue();
+        long issues=((Number)em.createNativeQuery("SELECT COUNT(*) FROM import_issues WHERE job_id=:id AND active=true").setParameter("id",id).getSingleResult()).longValue();
         long prepared=em.createQuery("SELECT COUNT(b) FROM ImportBatchEntity b WHERE b.jobId=:id",Long.class).setParameter("id",id).getSingleResult();
         return new ImportJobEntity.View(id,job.status,job.totalBatches,done,issues,job.duplicateHeaders,job.error,
                 prepared,job.publishedOrganizations,job.publishedItems,job.publishedOrders,job.publishedOrderLines);
@@ -142,20 +142,34 @@ public class ImportStore {
 
     @Transactional(readOnly=true)
     public List<String> awaitingValidation() {
-        return em.createQuery("SELECT j.id FROM ImportJobEntity j WHERE j.status='STAGING' AND j.manifestReady=true AND NOT EXISTS (SELECT b.id FROM ImportBatchEntity b WHERE b.jobId=j.id AND (b.done=false OR (b.source='pedido_itens.csv' AND b.publicationDone=false)))",String.class).getResultList();
+        return em.createQuery("SELECT j.id FROM ImportJobEntity j WHERE j.status IN ('STAGING','NEEDS_REVIEW','REVIEW_PENDING') AND j.manifestReady=true AND NOT EXISTS (SELECT b.id FROM ImportBatchEntity b WHERE b.jobId=j.id AND (b.done=false OR (b.source='pedido_itens.csv' AND b.publicationDone=false)))",String.class).getResultList();
     }
 
     @Transactional(readOnly=true)
     public List<Map<String,Object>> issues(String jobId,long after,int limit) {
+        return issues(jobId,after,limit,false);
+    }
+
+    @Transactional(readOnly=true)
+    public List<Map<String,Object>> issues(String jobId,long after,int limit,boolean history) {
         if(limit<1||limit>100||after<0) throw new IllegalArgumentException("Paginação inválida.");
         status(jobId);
-        @SuppressWarnings("unchecked") List<Object[]> rows=em.createNativeQuery("SELECT i.id,i.source,i.line_number,i.record_key,i.reason,r.raw_payload FROM import_issues i LEFT JOIN import_rows r ON r.job_id=i.job_id AND r.source=i.source AND r.line_number=i.line_number WHERE i.job_id=:id AND i.id>:after ORDER BY i.id")
+        @SuppressWarnings("unchecked") List<Object[]> rows=em.createNativeQuery("SELECT i.id,i.source,i.line_number,i.record_key,i.reason,r.raw_payload,r.revision,COALESCE(r.corrected_payload,r.raw_payload),i.active FROM import_issues i LEFT JOIN import_rows r ON r.job_id=i.job_id AND r.source=i.source AND r.line_number=i.line_number WHERE i.job_id=:id AND i.id>:after"+(history?"":" AND i.active=true")+" ORDER BY i.id")
                 .setParameter("id",jobId).setParameter("after",after).setMaxResults(limit).getResultList();
         return rows.stream().map(row->{ Map<String,Object> result=new LinkedHashMap<>();
-            String[] keys={"id","arquivo","linha","chave","motivo","original"};
+            String[] keys={"id","arquivo","linha","chave","motivo","original","revision","fields","active"};
             for(int i=0;i<keys.length;i++) result.put(keys[i],row[i]);return result; }).toList();
     }
     static String truncate(String text) { return text==null?"Falha sem detalhe":text.substring(0,Math.min(1400,text.length())); }
+
+    @Transactional
+    public void validationFailed(String id,String error) {
+        var job=em.find(ImportJobEntity.class,id,LockModeType.PESSIMISTIC_WRITE);
+        if(job!=null&&Set.of("STAGING","NEEDS_REVIEW","REVIEW_PENDING").contains(job.status)) {
+            job.error=truncate(error);
+            if(job.status.equals("REVIEW_PENDING")&&em.find(ImportControlEntity.class,1).ready)job.status="COMPLETED_WITH_ISSUES";
+        }
+    }
 
     private ImportJobEntity lockJobWithoutBlockingReferences(String id) {
         em.createNativeQuery("SELECT id FROM import_jobs WHERE id=:id FOR NO KEY UPDATE").setParameter("id",id).getSingleResult();

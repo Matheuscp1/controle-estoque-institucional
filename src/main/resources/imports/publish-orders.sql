@@ -19,7 +19,7 @@ WITH candidates AS (
  FROM import_rows r JOIN candidates c ON c.code=r.record_key
  LEFT JOIN itens i ON i.codigo=r.reference_key AND i.import_job_id=:job
  WHERE r.job_id=:job AND r.source='pedido_itens.csv'
-), complete_lines AS (
+), complete_lines AS MATERIALIZED (
  SELECT code,COUNT(*) AS received,
  string_agg(LENGTH(item_code)||':'||item_code||
  LENGTH(CAST(trim_scale(quantity) AS TEXT))||':'||CAST(trim_scale(quantity) AS TEXT),'' ORDER BY item_code COLLATE "C") AS signature_lines

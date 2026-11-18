@@ -1,31 +1,31 @@
 INSERT INTO import_issues(job_id,source,line_number,record_key,reason)
-SELECT job_id,source,line_number,record_key,error FROM import_rows WHERE job_id=:job AND error IS NOT NULL;
+SELECT job_id,source,line_number,record_key,error FROM import_rows WHERE job_id=:job AND excluded=false AND error IS NOT NULL;
 
 INSERT INTO import_issues(job_id,source,reason)
 SELECT :job,s.name,'EMPTY_SOURCE: arquivo sem registros'
 FROM (VALUES ('orgaos.csv'),('itens.csv'),('pedidos.csv'),('pedido_itens.csv')) AS s(name)
-WHERE NOT EXISTS (SELECT 1 FROM import_rows r WHERE r.job_id=:job AND r.source=s.name);
+WHERE NOT EXISTS (SELECT 1 FROM import_rows r WHERE r.job_id=:job AND r.excluded=false AND r.source=s.name);
 
 INSERT INTO import_issues(job_id,source,line_number,record_key,reason)
 SELECT :job,source,MIN(line_number),record_key,'CONFLICTING_DUPLICATE: mesma chave com conteúdo divergente'
-FROM import_rows WHERE job_id=:job AND error IS NULL AND source<>'pedido_itens.csv'
+FROM import_rows WHERE job_id=:job AND excluded=false AND error IS NULL AND source<>'pedido_itens.csv'
 GROUP BY source,record_key HAVING COUNT(DISTINCT payload)>1;
 
 INSERT INTO import_issues(job_id,source,line_number,record_key,reason)
 SELECT :job,source,MIN(line_number),record_key,'DUPLICATE_ORDER_ITEM: item repetido no pedido'
-FROM import_rows WHERE job_id=:job AND source='pedido_itens.csv' AND error IS NULL
+FROM import_rows WHERE job_id=:job AND excluded=false AND source='pedido_itens.csv' AND error IS NULL
 GROUP BY source,record_key,reference_key HAVING COUNT(*)>1;
 
 CREATE TEMP TABLE load_orgs ON COMMIT DROP AS
 SELECT record_key AS code,CAST(MIN(payload) AS jsonb) AS data FROM import_rows
-WHERE job_id=:job AND source='orgaos.csv' AND error IS NULL GROUP BY record_key;
+WHERE job_id=:job AND excluded=false AND source='orgaos.csv' AND error IS NULL GROUP BY record_key;
 CREATE UNIQUE INDEX ON load_orgs(code);
 
 CREATE TEMP TABLE load_items ON COMMIT DROP AS
 SELECT code,data,CAST(data->>'saldo_inicial' AS NUMERIC(19,3)) AS initial_balance,
 CAST(data->>'saldo_atual' AS NUMERIC(19,3)) AS balance
 FROM (SELECT record_key AS code,CAST(MIN(payload) AS jsonb) AS data FROM import_rows
-WHERE job_id=:job AND source='itens.csv' AND error IS NULL GROUP BY record_key) s;
+WHERE job_id=:job AND excluded=false AND source='itens.csv' AND error IS NULL GROUP BY record_key) s;
 CREATE UNIQUE INDEX ON load_items(code);
 
 CREATE TEMP TABLE load_orders ON COMMIT DROP AS
@@ -33,13 +33,13 @@ SELECT code,data,data->>'codigo_orgao' AS org_code,data->>'situacao' AS status,
 CAST(data->>'data_hora' AS TIMESTAMP WITH TIME ZONE) AS created_at,
 CAST(NULLIF(data->>'data_cancelamento','') AS TIMESTAMP WITH TIME ZONE) AS cancelled_at
 FROM (SELECT record_key AS code,CAST(MIN(payload) AS jsonb) AS data FROM import_rows
-WHERE job_id=:job AND source='pedidos.csv' AND error IS NULL GROUP BY record_key) s;
+WHERE job_id=:job AND excluded=false AND source='pedidos.csv' AND error IS NULL GROUP BY record_key) s;
 CREATE UNIQUE INDEX ON load_orders(code);
 
 CREATE TEMP TABLE load_lines ON COMMIT DROP AS
 SELECT line_number,record_key AS order_code,reference_key AS item_code,
 CAST(CAST(payload AS jsonb)->>'quantidade' AS NUMERIC(19,3)) AS quantity
-FROM import_rows WHERE job_id=:job AND source='pedido_itens.csv' AND error IS NULL;
+FROM import_rows WHERE job_id=:job AND excluded=false AND source='pedido_itens.csv' AND error IS NULL;
 CREATE INDEX ON load_lines(order_code,item_code);
 CREATE INDEX ON load_lines(item_code);
 ANALYZE load_orgs;
@@ -88,4 +88,4 @@ UPDATE import_issues i SET line_number=(
  SELECT MIN(r.line_number) FROM import_rows r
  WHERE r.job_id=i.job_id AND r.source=i.source AND r.record_key=i.record_key
 )
-WHERE i.job_id=:job AND i.line_number IS NULL AND i.record_key IS NOT NULL;
+WHERE i.job_id=:job AND i.active=true AND i.line_number IS NULL AND i.record_key IS NOT NULL;

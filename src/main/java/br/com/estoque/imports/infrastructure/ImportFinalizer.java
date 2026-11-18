@@ -13,17 +13,32 @@ public class ImportFinalizer {
     public void finish(String id) {
         var control=em.find(ImportControlEntity.class,1,LockModeType.PESSIMISTIC_WRITE);
         var job=em.find(ImportJobEntity.class,id,LockModeType.PESSIMISTIC_WRITE);
-        if(job==null||!job.status.equals("STAGING")||!id.equals(control.activeJob)) return;
+        if(job==null||!java.util.Set.of("STAGING","NEEDS_REVIEW","REVIEW_PENDING").contains(job.status)||!id.equals(control.activeJob)) return;
+        boolean reviewing=job.status.equals("REVIEW_PENDING")&&control.ready;
         long pending=em.createQuery("SELECT COUNT(b) FROM ImportBatchEntity b WHERE b.jobId=:id AND b.done=false",Long.class).setParameter("id",id).getSingleResult();
         long batches=em.createQuery("SELECT COUNT(b) FROM ImportBatchEntity b WHERE b.jobId=:id",Long.class).setParameter("id",id).getSingleResult();
         if(pending>0||batches!=job.totalBatches) return;
         long unpublished=em.createQuery("SELECT COUNT(b) FROM ImportBatchEntity b WHERE b.jobId=:id AND b.source='pedido_itens.csv' AND b.publicationDone=false",Long.class).setParameter("id",id).getSingleResult();
         long catalogs=((Number)em.createNativeQuery("SELECT COUNT(*) FROM import_sources WHERE job_id=:id AND source IN ('orgaos.csv','itens.csv') AND published=true").setParameter("id",id).getSingleResult()).longValue();
         if(!job.manifestReady||unpublished>0||catalogs!=2)return;
-        em.createNativeQuery("DELETE FROM import_issues WHERE job_id=:job").setParameter("job",id).executeUpdate();
+        em.createNativeQuery("UPDATE import_issues SET active=false WHERE job_id=:job AND active=true").setParameter("job",id).executeUpdate();
         script("validate.sql",id);
-        long issueCount=((Number)em.createNativeQuery("SELECT COUNT(*) FROM import_issues WHERE job_id=:job").setParameter("job",id).getSingleResult()).longValue();
-        if(issueCount>0) {job.status="NEEDS_REVIEW";job.error="Dados provisórios inseridos. Uso bloqueado até resolver as inconsistências.";return;}
+        long issueCount=((Number)em.createNativeQuery("SELECT COUNT(*) FROM import_issues WHERE job_id=:job AND active=true").setParameter("job",id).getSingleResult()).longValue();
+        if(reviewing) {
+            for(var pair:java.util.Map.of("orgaos","load_orgs","itens","load_items","pedidos","load_orders").entrySet()) {
+                String key=pair.getKey().equals("pedidos")?"id_externo":"codigo";
+                long foreign=((Number)em.createNativeQuery("SELECT COUNT(*) FROM "+pair.getKey()+" p JOIN "+pair.getValue()+" l ON l.code=p."+key+" WHERE p.import_job_id IS NULL OR p.import_job_id<>:job")
+                        .setParameter("job",id).getSingleResult()).longValue();
+                if(foreign>0)throw new IllegalStateException("Correção conflita com registros externos à carga: "+pair.getKey());
+            }
+            script("review-publish.sql",id);
+        }
+        script("quarantine.sql",id);
+        // Só libera registros após sincronizar suas correções na mesma transação.
+        em.createNativeQuery("DELETE FROM import_quarantine q WHERE q.job_id=:job AND NOT EXISTS (SELECT 1 FROM review_quarantine r WHERE r.entity_type=q.entity_type AND r.record_key=q.record_key)")
+                .setParameter("job",id).executeUpdate();
+        if(issueCount>0) {job.status="COMPLETED_WITH_ISSUES";job.error=null;control.ready=true;return;}
+        if(reviewing) {job.status="COMPLETED";job.error=null;control.ready=true;return;}
         var tables=java.util.Map.of("orgaos","load_orgs","itens","load_items","pedidos","load_orders","pedido_itens","load_lines");
         for(String table:java.util.List.of("orgaos","itens","pedidos")) {
             long foreign=((Number)em.createNativeQuery("SELECT COUNT(*) FROM "+table+" WHERE import_job_id IS NULL OR import_job_id<>:job")

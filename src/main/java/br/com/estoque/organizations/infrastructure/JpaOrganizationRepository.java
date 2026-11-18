@@ -19,7 +19,10 @@ public class JpaOrganizationRepository implements OrganizationRepository {
         this.repository=repository;this.em=em;this.transactions=new TransactionTemplate(manager);
     }
     @Override public Organization cadastrar(Organization organization) {
-        try {return transactions.execute(status->repository.saveAndFlush(OrganizationEntity.from(organization)).toDomain());}
+        try {return transactions.execute(status->{
+            if(br.com.estoque.imports.infrastructure.ImportQuarantine.contains(em,"ORGANIZATION",organization.codigo()))
+                throw new OrganizationErrors.DuplicateCode(organization.codigo());
+            return repository.saveAndFlush(OrganizationEntity.from(organization)).toDomain();});}
         catch(DataIntegrityViolationException e){throw new OrganizationErrors.DuplicateCode(organization.codigo());}
     }
     @Override @Transactional(readOnly=true)

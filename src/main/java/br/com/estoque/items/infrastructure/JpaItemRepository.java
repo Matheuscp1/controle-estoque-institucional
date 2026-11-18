@@ -35,7 +35,7 @@ public class JpaItemRepository implements ItemRepository {
     @Override
     public Item inserir(Item item) {
         try {
-            return transactions.execute(status -> repository.saveAndFlush(ItemEntity.nova(item)).toDomain());
+            return transactions.execute(status -> {requireReleased(item.codigo());return repository.saveAndFlush(ItemEntity.nova(item)).toDomain();});
         } catch (DataIntegrityViolationException e) {
             throw new ErroItem.CodigoDuplicado(item.codigo());
         }
@@ -45,6 +45,7 @@ public class JpaItemRepository implements ItemRepository {
     public boolean atualizar(Item item, long versaoEsperada) {
         try {
             return Boolean.TRUE.equals(transactions.execute(status -> {
+                requireReleased(item.codigo());
                 var existente = repository.findById(item.codigo());
                 if (existente.isEmpty() || existente.get().toDomain().versao() != versaoEsperada) return false;
                 var entity = existente.get();
@@ -59,6 +60,11 @@ public class JpaItemRepository implements ItemRepository {
             // A tradução ocorre depois do rollback, inclusive se a falha surgir no commit.
             return false;
         }
+    }
+
+    private void requireReleased(String code) {
+        if(br.com.estoque.imports.infrastructure.ImportQuarantine.contains(entityManager,"ITEM",code))
+            throw new ErroItem.Conflito("Item com pendência na importação: "+code);
     }
 
     @Override

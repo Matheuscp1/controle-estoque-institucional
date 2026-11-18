@@ -19,6 +19,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 @EnableScheduling
 public class ImportConfiguration {
     @Bean ImportStore importStore(EntityManager em,ObjectMapper json) {return new ImportStore(em,json);}
+    @Bean ImportReview importReview(EntityManager em,ObjectMapper json) {return new ImportReview(em,json);}
     @Bean BatchProcessor batchProcessor(EntityManager em,ObjectMapper json) {return new JpaBatchProcessor(em,json);}
     @Bean ArchiveStorage archiveStorage(@Value("${imports.directory:./import-data}") String directory) {return new ArchiveStorage(Path.of(directory));}
     @Bean ArchivePreparer archivePreparer(ImportStore store,ArchiveStorage archives) {return new ArchivePreparer(store,archives);}

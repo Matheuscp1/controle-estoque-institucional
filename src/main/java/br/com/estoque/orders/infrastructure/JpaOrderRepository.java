@@ -26,10 +26,14 @@ public class JpaOrderRepository implements OrderRepository {
     }
     @Override public Optional<Order> lockById(long id) {
         // Não faz fetch join sob FOR UPDATE: bloqueia apenas o cabeçalho antes de ler as linhas.
-        return Optional.ofNullable(entityManager.find(OrderEntity.class, id, LockModeType.PESSIMISTIC_WRITE))
-                .map(OrderEntity::toDomain);
+        var result=Optional.ofNullable(entityManager.find(OrderEntity.class, id, LockModeType.PESSIMISTIC_WRITE)).map(OrderEntity::toDomain);
+        result.ifPresent(order->{if(br.com.estoque.imports.infrastructure.ImportQuarantine.contains(entityManager,"ORDER",order.request().externalId()))
+            throw new OrderErrors.Conflict("Pedido com pendência na importação.");});
+        return result;
     }
     @Override public Order insertHeader(NewOrder request, OffsetDateTime createdAt) {
+        if(br.com.estoque.imports.infrastructure.ImportQuarantine.contains(entityManager,"ORDER",request.externalId()))
+            throw new OrderErrors.Conflict("Identificador reservado por pedido pendente na importação.");
         try {
             var entity = repository.saveAndFlush(OrderEntity.header(request, createdAt));
             return Order.confirmed(entity.id(), request, createdAt);

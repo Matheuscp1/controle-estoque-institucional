@@ -35,7 +35,7 @@ Para executar sem Docker, disponibilize PostgreSQL, configure `DB_URL`, `DB_USER
 
 ## Arquitetura e API
 
-Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagonal)**. Uma única aplicação é organizada por funcionalidades, como itens, órgãos e pedidos. Dentro de cada módulo, as regras dependem de interfaces, enquanto os detalhes de HTTP e persistência ficam nos adaptadores externos. Os módulos `items`, `organizations` e `orders` seguem essa organização. O módulo `imports` acrescenta validação do legado, processamento assíncrono, inserts incrementais e liberação integral da carga para uso.
+Adotamos um **monólito modular com arquitetura de portas e adaptadores (hexagonal)**. Uma única aplicação é organizada por funcionalidades, como itens, órgãos e pedidos. Dentro de cada módulo, as regras dependem de interfaces, enquanto os detalhes de HTTP e persistência ficam nos adaptadores externos. Os módulos `items`, `organizations` e `orders` seguem essa organização. O módulo `imports` acrescenta validação do legado, processamento assíncrono, inserts incrementais, conclusão com pendências e revisão manual.
 
 | Camada | Responsabilidade |
 | --- | --- |
@@ -107,7 +107,7 @@ Os testes pequenos verificam regras e concorrência funcional. Na implementaçã
 
 ## Tratamento dos dados legados
 
-**Estado atual:** o importador realiza inserts incrementais. Órgãos e itens entram após o processamento de seus arquivos; cada pedido entra com todas as suas linhas, sem esperar a validação global. O acesso operacional permanece bloqueado até reconciliar o histórico. Consulte [execução, estados, retomada e decisões da importação](docs/importacao.md).
+**Estado atual:** o importador realiza inserts incrementais e conclui em `COMPLETED` ou `COMPLETED_WITH_ISSUES`. No segundo caso, os dados consistentes podem ser usados e os registros afetados ficam protegidos até revisão. Há endpoints para consultar ocorrências, corrigir linhas com revisão e justificativa, adicionar registros ausentes, desconsiderar duplicatas idênticas e agendar reprocessamento. Consulte [a revisão manual](docs/revisao-importacao.md) e [a execução da carga](docs/importacao.md).
 
 Foram lidos 250 órgãos, 50.000 itens, 1.002.000 cabeçalhos de pedidos e 2.330.045 linhas de pedidos. A auditoria identificou 2.000 cabeçalhos extras idênticos, referências inexistentes, quantidades inválidas, 100 pedidos sem linhas e cancelamentos incompletos. Os números e suas limitações estão na [análise da massa](docs/analise-massa.md).
 
@@ -126,11 +126,11 @@ A importação deverá respeitar as mesmas regras de negócio da operação onli
 
 Os registros permanecem em `import_rows`, fora das tabelas operacionais, com arquivo de origem, linha lógica, identificador e conteúdo original. `import_issues` registra as inconsistências e pode ser consultada pela API com paginação. O ZIP original também é preservado.
 
-**Os inserts são incrementais; a liberação para uso é integral.** Qualquer inconsistência deixa a carga em `NEEDS_REVIEW`, com o acesso operacional bloqueado. Registros inseridos ficam identificados por `import_job_id` como provisórios. Uma versão corrigida pode substituir somente esses registros enquanto o sistema estiver bloqueado, preservando arquivos e linhas de origem. Dados online ou de fora da carga nunca são apagados automaticamente. Reenviar exatamente o mesmo arquivo retorna a mesma carga.
+**Os inserts são incrementais; pendências não impedem concluir o processamento.** Itens com saldo ou histórico pendente não podem ser movimentados nem editados, e pedidos afetados não podem ser cancelados ou ter seu identificador reutilizado. As correções preservam o original, exigem revisão e justificativa e só são publicadas após revalidação. Dados e movimentos já liberados não são sobrescritos pelo histórico. Reenviar exatamente o mesmo ZIP retorna a carga existente; o reprocessamento manual não precisa reler o arquivo.
 
 A carga usa Java, leitura em fluxo, lotes de 500 registros e gravações JPA em batches de 50. As datas sem offset usam `America/Sao_Paulo`; horários ambíguos ou inexistentes são rejeitados. A validação global verifica o saldo final e reconstrói reservas e devoluções para detectar saldos históricos negativos. As 2.824 divergências da auditoria inicial são comparações brutas, anteriores ao saneamento, e não valores prontos para corrigir o banco. A publicação copia os saldos históricos sem executar novos débitos.
 
 
 ## Próximas etapas
 
-Revisar as inconsistências da massa com o responsável pelos dados, preparar uma versão saneada com justificativas e validar sua publicação integral. Comparar configurações de lotes e consumidores em medições controladas antes de afirmar ganhos de desempenho com a fila.
+Revisar as inconsistências da massa com o responsável pelos dados usando os endpoints de tratamento e validar as correções. Comparar configurações de lotes e consumidores em medições controladas antes de afirmar ganhos de desempenho com a fila.
