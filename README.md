@@ -120,7 +120,7 @@ A importação deverá respeitar as mesmas regras de negócio da operação onli
 | Pedido sem linhas, com referência inexistente ou quantidade inválida | Rejeitar o pedido inteiro da carga definitiva, preservando os registros de origem para análise. |
 | Par pedido/item repetido | Separar o pedido até definir se é duplicação ou quantidade complementar; não somar nem descartar linhas silenciosamente. |
 | Unidade com variação de caixa ou espaços | Normalizar com remoção dos espaços nas extremidades e conversão para maiúsculas, registrando a transformação. |
-| Cancelamento incompleto ou anterior à criação | Separar para análise; não inventar data ou motivo para contornar as restrições. Exigir motivo é uma premissa nossa, não uma regra textual do enunciado. |
+| Cancelamento sem data válida ou anterior à criação | Separar para análise; não inventar a data. O motivo é opcional no legado e sua ausência, sozinha, não gera ocorrência. |
 | Pedido histórico de item atualmente inativo | Preservar se válido: a inatividade atual não comprova que o item estava inativo na data do pedido. |
 | Divergência de saldo | Registrar e reconciliar após o saneamento; não corrigir silenciosamente nem descontar o histórico novamente sobre `saldo_atual`. |
 

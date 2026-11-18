@@ -13,7 +13,8 @@ public record Order(long id, NewOrder request, OffsetDateTime createdAt, OrderSt
         if (status == OrderStatus.CONFIRMADO && (cancelledAt != null || cancellationReason != null))
             throw new IllegalArgumentException("Pedido confirmado não possui cancelamento.");
         if (status == OrderStatus.CANCELADO) {
-            NewOrder.required(cancellationReason, "Motivo", 500);
+            // O legado pode não informar motivo; novas operações validam esse campo em cancel().
+            if (cancellationReason != null) NewOrder.required(cancellationReason, "Motivo", 500);
             if (cancelledAt == null || cancelledAt.isBefore(createdAt))
                 throw new IllegalArgumentException("Data de cancelamento inválida.");
         }

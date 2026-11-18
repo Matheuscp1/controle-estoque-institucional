@@ -104,6 +104,20 @@ class ImportQueueIntegrationTest {
         mvc.perform(get("/api/itens")).andExpect(status().isServiceUnavailable());
     }
 
+    @Test void cancelamentoLegadoSemMotivoEntraSemOcorrenciaENaoDevolveSaldoNovamente() throws Exception {
+        String id=start(archive(false,false,false));preparer.prepareNext();
+        db.update("UPDATE import_batches SET payload=replace(payload,'Desistencia','   ') WHERE source='pedidos.csv'");
+        for(String batch:db.queryForList("SELECT id FROM import_batches WHERE job_id=?",String.class,id))processor.process(batch);
+        publishAll(id);finalizer.finish(id);
+        assertThat(store.status(id).status()).isEqualTo("COMPLETED");
+        assertThat(store.status(id).issues()).isZero();
+        assertThat(db.queryForObject("SELECT motivo_cancelamento FROM pedidos WHERE id_externo='P2'",String.class)).isNull();
+        Long orderId=db.queryForObject("SELECT id FROM pedidos WHERE id_externo='P2'",Long.class);
+        assertThat(orders.get(orderId).cancellationReason()).isNull();
+        assertThatThrownBy(()->orders.cancel(orderId,"Outra tentativa")).isInstanceOf(br.com.estoque.orders.domain.OrderErrors.Conflict.class);
+        assertThat(db.queryForObject("SELECT saldo FROM itens WHERE codigo='A'",java.math.BigDecimal.class)).isEqualByComparingTo("7");
+    }
+
     @Test void referenciaInexistenteNaoImportaParteDoPedido() throws Exception {
         String id=start(archive(false,true,false));stageDirectly(id);finalizer.finish(id);
         assertThat(store.status(id).status()).isEqualTo("NEEDS_REVIEW");

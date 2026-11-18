@@ -78,7 +78,7 @@ Esta implementação adota **inserts incrementais e liberação integral para us
 
 - Cabeçalhos equivalentes após normalização são consolidados e contabilizados. Cabeçalhos divergentes com a mesma chave impedem a carga.
 - Pares pedido/item repetidos impedem a carga, mesmo se a quantidade for igual: não é possível inferir se são duplicações ou parcelas complementares.
-- Referências inexistentes, quantidades inválidas, pedidos sem itens e cancelamentos incompletos impedem a carga.
+- Referências inexistentes, quantidades inválidas, pedidos sem itens e cancelamentos sem data válida impedem a carga. O motivo do cancelamento é opcional no legado; vazio ou somente espaços é normalizado para ausência, sem gerar ocorrência. Quando informado, seu limite continua sendo 500 caracteres.
 - Unidades são normalizadas com remoção dos espaços das extremidades e conversão para maiúsculas. Os campos originais permanecem disponíveis.
 - Datas sem fuso são interpretadas em `America/Sao_Paulo`. Horários ambíguos ou inexistentes por transição de fuso são rejeitados.
 - O saldo final deve corresponder ao saldo inicial menos os pedidos confirmados. O histórico de reservas e devoluções também não pode produzir saldo negativo. Na ausência de uma ordem conhecida para eventos simultâneos, reservas precedem devoluções; essa premissa conservadora pode exigir revisão de casos do legado.
@@ -97,7 +97,9 @@ Cada pedido completo é inserido atomicamente, com suas linhas. A carga copia os
 
 A revisão pode resultar em correção ou exclusão justificada na próxima versão do arquivo. O original e o motivo da rejeição permanecem registrados. Depois de qualquer alteração, referências e saldos precisam ser revalidados. O bloqueio de toda a carga enquanto há ocorrências é uma decisão desta implementação, e não uma exigência explícita de que todo registro legado seja recuperado.
 
-`EMPTY_ORDER` não se refere ao motivo de cancelamento. Exigir motivo em um pedido cancelado é uma premissa adotada pela aplicação; o enunciado apresentado exige cancelamento único e devolução das quantidades, mas não explicita a obrigatoriedade desse campo.
+`EMPTY_ORDER` não se refere ao motivo de cancelamento. Pedidos legados cancelados sem motivo podem ser inseridos quando os demais dados forem válidos. A data de cancelamento continua obrigatória para reconstruir o histórico de saldo. Na API de novos cancelamentos, o motivo continua obrigatório.
+
+As demais ocorrências podem ser corrigidas e aproveitadas posteriormente por uma nova versão do ZIP. Atualmente não há endpoint para editar ou reprocessar uma ocorrência individual. Reenviar o mesmo arquivo retorna a carga existente e não revalida suas linhas; a alteração desta regra também não reprocessa automaticamente cargas antigas. Uma versão corrigida com conteúdo diferente passa novamente por todas as regras e pela reconciliação dos saldos.
 
 ## Testes
 

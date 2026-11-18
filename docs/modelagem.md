@@ -46,9 +46,9 @@ O ID numérico interno torna as referências e os índices dos pedidos mais comp
 
 As migrações impedem saldos negativos, quantidades não positivas, códigos duplicados, referências inexistentes e itens repetidos no mesmo pedido. Os campos textuais essenciais não podem ficar vazios. A versão do item começa em zero e não pode ser negativa.
 
-Origem aceita `PORTAL` ou `INTEGRACAO`; situação aceita `CONFIRMADO` ou `CANCELADO`. Pedido confirmado não possui dados de cancelamento; pedido cancelado exige data igual ou posterior à criação e motivo preenchido. Chaves estrangeiras preservam as referências históricas, sem exclusão em cascata.
+Origem aceita `PORTAL` ou `INTEGRACAO`; situação aceita `CONFIRMADO` ou `CANCELADO`. Pedido confirmado não possui dados de cancelamento; pedido cancelado exige data igual ou posterior à criação. A migração V5 permite motivo ausente para representar o legado, sem alterar a V1 já aplicada. Chaves estrangeiras preservam as referências históricas, sem exclusão em cascata.
 
-A obrigatoriedade de motivo e a consistência cronológica do cancelamento são premissas desta modelagem. O enunciado exige cancelamento único e devolução de saldo, mas não determina esses detalhes. A análise encontrou cancelamentos incompletos no legado; esses registros precisam de uma política explícita de tratamento antes da carga.
+A consistência cronológica é uma premissa desta modelagem. Na importação, motivo vazio ou somente espaços vira `NULL`, preservando o original na preparação. Sua ausência não gera ocorrência. A API de novos cancelamentos continua exigindo motivo; consultas aceitam pedidos legados sem esse campo. A data permanece necessária para reconstruir o saldo histórico.
 
 As restrições SQL não garantem sozinhas que um pedido tenha pelo menos uma linha, que o saldo seja debitado atomicamente, que o cancelamento ocorra uma única vez ou que a versão seja conferida nas edições. O módulo `orders` implementa essas garantias com validações de domínio, transações, bloqueios e testes de concorrência. A assinatura compara o conteúdo de reenvios com o mesmo identificador externo.
 

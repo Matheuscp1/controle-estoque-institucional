@@ -57,6 +57,8 @@ As datas são filtradas por criação do pedido. A paginação usa cursor, sem `
 
 Retorna `200` com o pedido cancelado. O motivo é obrigatório, com até 500 caracteres. A data é gerada pelo servidor e não pode anteceder a criação. Os instantes gerados usam UTC e precisão de microssegundos, compatível com as colunas do PostgreSQL.
 
+Essa exigência vale para novos cancelamentos pela API. Pedidos já cancelados no legado podem ser importados sem motivo; nesse caso as consultas retornam `motivoCancelamento: null`. A ausência do motivo não permite cancelar o pedido novamente.
+
 As quantidades são devolvidas mesmo se o item tiver sido inativado após o pedido. Um segundo cancelamento retorna `409`. Se alguma devolução ultrapassar a capacidade de `NUMERIC(19,3)`, a operação inteira retorna conflito: nenhum saldo é alterado e o pedido continua confirmado.
 
 ## Concorrência e erros

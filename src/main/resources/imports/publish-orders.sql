@@ -35,7 +35,7 @@ WITH candidates AS (
  LENGTH(h.data->>'origem')||':'||(h.data->>'origem')||l.signature_lines,'UTF8')),'hex'),
  CAST(h.data->>'data_hora' AS TIMESTAMP WITH TIME ZONE),h.data->>'situacao',
  CAST(NULLIF(h.data->>'data_cancelamento','') AS TIMESTAMP WITH TIME ZONE),
- CASE WHEN h.data->>'situacao'='CANCELADO' THEN h.data->>'motivo_cancelamento' ELSE NULL END,:job
+ CASE WHEN h.data->>'situacao'='CANCELADO' THEN NULLIF(h.data->>'motivo_cancelamento','') ELSE NULL END,:job
  FROM headers h JOIN complete_lines l ON l.code=h.code
  JOIN import_order_manifest m ON m.job_id=:job AND m.order_code=h.code AND m.expected_lines=l.received
  JOIN orgaos o ON o.codigo=h.data->>'codigo_orgao' AND o.import_job_id=:job

@@ -40,7 +40,9 @@ public final class LegacyRow {
                 option(row,"situacao",Set.of("CONFIRMADO","CANCELADO"));
                 var created = timestamp(row.get("data_hora")); row.put("data_hora",created.toString());
                 if (row.get("situacao").equals("CANCELADO")) {
-                    text(row,"motivo_cancelamento",500);
+                    String reason=row.get("motivo_cancelamento");
+                    if(reason!=null && reason.length()>500) throw new IllegalArgumentException("Campo inválido: motivo_cancelamento");
+                    row.put("motivo_cancelamento",reason==null||reason.isBlank()?"":reason);
                     var cancelled = timestamp(row.get("data_cancelamento"));
                     if (cancelled.isBefore(created)) throw new IllegalArgumentException("Cancelamento anterior ao pedido.");
                     row.put("data_cancelamento",cancelled.toString());

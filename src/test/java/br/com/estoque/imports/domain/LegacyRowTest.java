@@ -5,6 +5,14 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
 
 class LegacyRowTest {
+    @Test void aceitaCancelamentoSemMotivoMasPreservaLimiteDoCampo() {
+        var row = new java.util.HashMap<>(Map.of("id_externo","P","codigo_orgao","O",
+                "solicitante","Maria","origem","PORTAL","data_hora","2020-01-01T10:00:00",
+                "situacao","CANCELADO","data_cancelamento","2020-01-02T10:00:00","motivo_cancelamento","   "));
+        assertThat(LegacyRow.parse("pedidos.csv",row).get("motivo_cancelamento")).isEmpty();
+        row.put("motivo_cancelamento","x".repeat(501));
+        assertThatThrownBy(()->LegacyRow.parse("pedidos.csv",row)).isInstanceOf(IllegalArgumentException.class);
+    }
     @Test void normalizaUnidadeSemDebitarSaldoHistorico() {
         var result = LegacyRow.parse("itens.csv", Map.of("codigo","A","descricao","Papel","unidade"," un ",
                 "saldo_inicial","10","saldo_atual","7","ativo","S","data_cadastro","2020-01-01"));
