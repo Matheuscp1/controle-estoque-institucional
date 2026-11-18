@@ -44,6 +44,7 @@
 
     <CursorList
       v-if="filters"
+      ref="results"
       title="Pedidos encontrados"
       empty-message="Nenhum pedido encontrado para este órgão com os filtros informados."
       :filters="filters"
@@ -83,6 +84,14 @@
                       Itens ({{ order.itens.length }})
                       <v-icon right small>{{ expandedId === order.id ? 'mdi-chevron-up' : 'mdi-chevron-down' }}</v-icon>
                     </v-btn>
+                    <v-btn
+                      v-if="order.situacao === 'CONFIRMADO'"
+                      small text color="error"
+                      :aria-label="'Cancelar pedido ' + order.idExterno"
+                      @click="cancelling = order"
+                    >
+                      Cancelar
+                    </v-btn>
                   </td>
                 </tr>
                 <tr v-if="expandedId === order.id" :key="order.id + '-details'" class="order-detail">
@@ -120,11 +129,25 @@
         ? 'Selecione um órgão e clique em Buscar para consultar seus pedidos.'
         : 'Nenhum órgão cadastrado.' }}</p>
     </section>
+    <CancelOrderDialog
+      v-if="cancelling"
+      :order="cancelling"
+      @close="cancelling = null"
+      @cancelled="onCancelled"
+      @changed="refreshOrders"
+    />
+    <v-snackbar v-model="cancelled" color="success" :timeout="4000">
+      Pedido cancelado. O saldo dos itens foi atualizado.
+      <template #action="{ attrs }">
+        <v-btn v-bind="attrs" text @click="cancelled = false">Fechar</v-btn>
+      </template>
+    </v-snackbar>
   </div>
 </template>
 
 <script>
 import CursorList from './CursorList.vue'
+import CancelOrderDialog from './CancelOrderDialog.vue'
 import { errorMessage, request } from './api'
 import { formatDecimal } from './decimal'
 
@@ -132,7 +155,7 @@ const emptyFilters = () => ({ codigo: null, firstDay: '', lastDay: '', situacao:
 const dateFormat = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 
 export default {
-  components: { CursorList },
+  components: { CursorList, CancelOrderDialog },
   data: () => ({
     draft: emptyFilters(),
     filters: null,
@@ -147,6 +170,8 @@ export default {
     pendingOrganizations: null,
     filterError: '',
     expandedId: null,
+    cancelling: null,
+    cancelled: false,
   }),
   created() {
     this.loadOrganizations()
@@ -216,6 +241,14 @@ export default {
       this.filters = null
       this.filterError = ''
       this.expandedId = null
+    },
+    refreshOrders() {
+      this.$refs.results.refresh()
+    },
+    onCancelled() {
+      this.cancelling = null
+      this.cancelled = true
+      this.refreshOrders()
     },
   },
 }
