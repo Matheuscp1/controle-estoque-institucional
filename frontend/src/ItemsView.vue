@@ -21,6 +21,7 @@
     </form>
 
     <CursorList
+      ref="results"
       title="Itens do catálogo"
       empty-message="Nenhum item encontrado com os filtros informados."
       :filters="filters"
@@ -37,6 +38,7 @@
                 <th scope="col">Unidade</th>
                 <th scope="col" class="text-right">Saldo disponível</th>
                 <th scope="col">Situação</th>
+                <th scope="col" class="text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -50,25 +52,42 @@
                     {{ item.ativo ? 'Ativo' : 'Inativo' }}
                   </v-chip>
                 </td>
+                <td class="text-right">
+                  <v-btn
+                    small text color="primary"
+                    :aria-label="'Editar item ' + item.codigo"
+                    @click="editing = item"
+                  >
+                    <v-icon left small>mdi-pencil-outline</v-icon> Editar
+                  </v-btn>
+                </td>
               </tr>
             </tbody>
           </template>
         </v-simple-table>
       </template>
     </CursorList>
+    <EditItemDialog v-if="editing" :item="editing" @close="editing = null" @saved="onSaved" />
+    <v-snackbar v-model="saved" color="success" :timeout="4000">
+      Item atualizado.
+      <template #action="{ attrs }">
+        <v-btn v-bind="attrs" text @click="saved = false">Fechar</v-btn>
+      </template>
+    </v-snackbar>
   </div>
 </template>
 
 <script>
 import CursorList from './CursorList.vue'
+import EditItemDialog from './EditItemDialog.vue'
 import { request } from './api'
 import { decimalInput, decimalMilliunits, formatDecimal } from './decimal'
 
 const emptyFilters = () => ({ descricao: '', unidade: '', saldoMin: '', saldoMax: '' })
 
 export default {
-  components: { CursorList },
-  data: () => ({ draft: emptyFilters(), filters: {}, filterError: '' }),
+  components: { CursorList, EditItemDialog },
+  data: () => ({ draft: emptyFilters(), filters: {}, filterError: '', editing: null, saved: false }),
   methods: {
     formatDecimal,
     fetchItems(filters, depois, limite, signal) {
@@ -92,6 +111,11 @@ export default {
     clearFilters() {
       this.draft = emptyFilters()
       this.applyFilters()
+    },
+    onSaved() {
+      this.editing = null
+      this.saved = true
+      this.$refs.results.refresh()
     },
   },
 }
