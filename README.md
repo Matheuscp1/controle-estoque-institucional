@@ -47,4 +47,4 @@ O histórico de implementação por etapa está no [roadmap](docs/roadmap-fronte
 
 ## Uso de IA
 
-O Codex cruzou o enunciado com os contratos da API, implementou as telas e verificou os fluxos no navegador. O bundle completo do Vuetify causou falha no build em Linux, então os componentes usados passaram a ser importados individualmente.
+O Codex cruzou o enunciado com os contratos da API, para melhor desempenho com teste
