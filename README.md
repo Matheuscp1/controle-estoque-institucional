@@ -22,7 +22,7 @@ docker compose up --build
 ```
 
 A aplicação usa a porta `8080`. O Flyway aplica as migrações automaticamente; estão disponíveis os endpoints de itens, órgãos e pedidos.
-No Compose, a importação inicial está habilitada: as APIs operacionais retornam `503` até a carga ser concluída e validada. Envie o ZIP pelo endpoint de importação seguindo [o guia de carga histórica](docs/importacao.md).
+No Compose, a importação inicial está habilitada: consultas mostram os dados inseridos progressivamente, enquanto alterações retornam `503` até a primeira validação. Envie o ZIP pelo endpoint de importação seguindo [o guia de carga histórica](docs/importacao.md).
 O banco usa volume persistente. A senha padrão é apenas para desenvolvimento; configure `DB_PASSWORD` em `.env` para alterá-la.
 
 Para compilar com Java 17 e Maven:
@@ -107,7 +107,7 @@ Os testes pequenos verificam regras e concorrência funcional. Na implementaçã
 
 ## Tratamento dos dados legados
 
-**Estado atual:** o importador realiza inserts incrementais e conclui em `COMPLETED` ou `COMPLETED_WITH_ISSUES`. No segundo caso, os dados consistentes podem ser usados e os registros afetados ficam protegidos até revisão. Há endpoints para consultar ocorrências, corrigir linhas com revisão e justificativa, adicionar registros ausentes, desconsiderar duplicatas idênticas e agendar reprocessamento. Consulte [a revisão manual](docs/revisao-importacao.md) e [a execução da carga](docs/importacao.md).
+**Estado atual:** o importador realiza inserts incrementais. As consultas mostram os dados já inseridos durante a carga, com `X-Import-Ready: false`; alterações aguardam a primeira validação. A carga conclui em `COMPLETED` ou `COMPLETED_WITH_ISSUES`, liberando o uso dos dados consistentes e protegendo os afetados até revisão. Há endpoints para consultar ocorrências, corrigir linhas com revisão e justificativa, adicionar registros ausentes, desconsiderar duplicatas idênticas e agendar reprocessamento. Consulte [a revisão manual](docs/revisao-importacao.md) e [a execução da carga](docs/importacao.md).
 
 Foram lidos 250 órgãos, 50.000 itens, 1.002.000 cabeçalhos de pedidos e 2.330.045 linhas de pedidos. A auditoria identificou 2.000 cabeçalhos extras idênticos, referências inexistentes, quantidades inválidas, 100 pedidos sem linhas e cancelamentos incompletos. Os números e suas limitações estão na [análise da massa](docs/analise-massa.md).
 

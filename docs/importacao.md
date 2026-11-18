@@ -48,7 +48,9 @@ O endpoint `retry` retoma a carga ativa em `FAILED`, preservando lotes concluíd
 
 Para corrigir dados, use os [endpoints de revisão manual](revisao-importacao.md). Cargas antigas em `NEEDS_REVIEW` com todos os lotes e inserts terminados são revalidadas pelo agendador após iniciar a versão atual. A substituição por outro ZIP permanece apenas para cargas antigas ou falhas ainda não liberadas; uma carga liberada, inclusive com pendências, nunca é substituída automaticamente. Reenviar exatamente o mesmo arquivo retorna a mesma carga.
 
-Enquanto a importação estiver habilitada e não houver uma carga concluída, as APIs operacionais respondem `503`. As APIs de importação continuam disponíveis. Para desenvolvimento sem RabbitMQ, desabilite explicitamente o módulo com `IMPORTS_ENABLED=false`.
+Durante a carga inicial, consultas `GET`/`HEAD` continuam disponíveis e retornam os registros já inseridos, com paginação. `OPTIONS` também é permitido. O header `X-Import-Ready: false` informa que os dados ainda são provisórios; o frontend pode exibir “Em validação” e acompanhar os contadores em `GET /api/imports/{id}`. Antes dos primeiros inserts, as listas podem estar vazias. Operações de escrita respondem `503` até concluir a primeira validação; os endpoints de importação permanecem disponíveis.
+
+Depois da validação inicial, `X-Import-Ready: true` indica que o bloqueio global de escrita terminou. Isso não garante que todos os registros estejam liberados: em `COMPLETED_WITH_ISSUES` ou `REVIEW_PENDING`, as restrições individuais continuam válidas e retornam `409` quando aplicáveis. Consulte `/quarantine` para identificar os afetados. Em frontend de outra origem, a configuração CORS deve expor esse header. Para desenvolvimento sem RabbitMQ, desabilite explicitamente o módulo com `IMPORTS_ENABLED=false`.
 
 ## Inserts durante a carga
 

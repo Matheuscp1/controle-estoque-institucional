@@ -13,10 +13,16 @@ public class ImportReadinessFilter extends OncePerRequestFilter {
     private final ImportStore store;
     public ImportReadinessFilter(ImportStore store) {this.store=store;}
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain) throws ServletException,IOException {
-        String path=request.getRequestURI();
-        if(path.startsWith("/api/") && !path.equals("/api/imports") && !path.startsWith("/api/imports/") && !store.ready()) {
-            response.setStatus(503);response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"mensagem\":\"Carga inicial ainda não concluída e validada.\"}");return;
+        String path=request.getRequestURI().substring(request.getContextPath().length());
+        if(path.startsWith("/api/") && !path.equals("/api/imports") && !path.startsWith("/api/imports/")) {
+            boolean ready=store.ready();
+            response.setHeader("X-Import-Ready",Boolean.toString(ready));
+            boolean readOnly=java.util.Set.of("GET","HEAD","OPTIONS").contains(request.getMethod());
+            if(!ready&&!readOnly) {
+                response.setStatus(503);response.setContentType("application/json;charset=UTF-8");
+                response.getWriter().write("{\"mensagem\":\"Dados em validação. Consultas disponíveis; alterações aguardam a validação inicial.\"}");
+                return;
+            }
         }
         chain.doFilter(request,response);
     }

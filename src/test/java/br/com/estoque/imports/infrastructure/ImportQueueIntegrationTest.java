@@ -403,7 +403,11 @@ class ImportQueueIntegrationTest {
         assertThat(store.status(id).completedBatches()).isEqualTo(2);
         assertThat(store.status(id).publishedItems()).isEqualTo(1);
         assertThat(store.ready()).isFalse();
-        mvc.perform(get("/api/itens")).andExpect(status().isServiceUnavailable());
+        mvc.perform(get("/api/itens")).andExpect(status().isOk())
+                .andExpect(header().string("X-Import-Ready","false"))
+                .andExpect(jsonPath("$[0].codigo").value("A"));
+        mvc.perform(post("/api/pedidos").contentType("application/json").content("{}"))
+                .andExpect(status().isServiceUnavailable());
     }
 
     @Test void pedidoEsperaTodasAsLinhasEReentregasConcorrentesNaoDuplicam() throws Exception {
