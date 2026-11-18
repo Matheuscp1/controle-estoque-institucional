@@ -1,0 +1,100 @@
+:root {
+  color-scheme: light;
+}
+
+.v-application {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+#app.v-application {
+  background: #f4f6f2;
+  color: #1d3028;
+}
+
+.topbar {
+  background: #173629;
+  color: #fff;
+}
+
+.topbar-inner,
+.workspace {
+  width: min(1200px, calc(100% - 48px));
+  margin-inline: auto;
+}
+
+.topbar-inner, .brand, .main-nav, .main-nav a {
+  display: flex;
+  align-items: center;
+}
+
+.topbar-inner {
+  min-height: 68px;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.topbar .brand,
+.topbar .main-nav a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand {
+  gap: 10px;
+  font-weight: 650;
+}
+
+.brand-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  background: #325a47;
+  border-radius: 10px;
+}
+
+.main-nav {
+  gap: 4px;
+}
+
+.main-nav a {
+  gap: 6px;
+  padding: 9px 13px;
+  border-radius: 8px;
+}
+
+.main-nav a:hover,
+.main-nav a[aria-current='page'] {
+  background: #315644;
+}
+
+.main-nav .v-icon {
+  color: inherit !important;
+}
+
+.workspace {
+  padding-block: 42px 56px;
+}
+
+.workspace h1 {
+  margin: 0 0 24px;
+  font-size: clamp(1.85rem, 4vw, 2.5rem);
+  line-height: 1.16;
+  letter-spacing: -.035em;
+}
+
+@media (max-width: 560px) {
+  .topbar-inner,
+  .workspace {
+    width: calc(100% - 24px);
+  }
+
+  .topbar-inner {
+    flex-wrap: wrap;
+    padding-block: 10px;
+  }
+
+  .workspace {
+    padding-block: 26px 40px;
+  }
+}
