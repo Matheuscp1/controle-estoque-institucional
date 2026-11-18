@@ -8,6 +8,8 @@ Repositório: https://github.com/Matheuscp1/controle-estoque-institucional
 
 ## Estrutura
 
+Cache de consultas compartilhado com Redis e logs de requisições/importação: veja [configuração e limites](docs/cache-logs.md).
+
 - `pom.xml`: dependências e build Maven.
 - `src/main/java/br/com/estoque/Application.java`: entrada da aplicação.
 - `src/main/resources/application.yml`: configuração do banco e da API.

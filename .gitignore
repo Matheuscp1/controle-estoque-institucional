@@ -3,3 +3,4 @@
 /.env
 *.log
 /import-data/
+/logs/

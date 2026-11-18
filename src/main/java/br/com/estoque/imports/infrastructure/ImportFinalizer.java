@@ -6,8 +6,10 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.transaction.annotation.Transactional;
 
 public class ImportFinalizer {
+    private static final org.slf4j.Logger LOG=org.slf4j.LoggerFactory.getLogger(ImportFinalizer.class);
     private final EntityManager em;
-    public ImportFinalizer(EntityManager em) {this.em=em;}
+    private final br.com.estoque.shared.infrastructure.ReadResponseCache cache;
+    public ImportFinalizer(EntityManager em,br.com.estoque.shared.infrastructure.ReadResponseCache cache) {this.em=em;this.cache=cache;}
 
     @Transactional
     public void finish(String id) {
@@ -37,8 +39,8 @@ public class ImportFinalizer {
         // Só libera registros após sincronizar suas correções na mesma transação.
         em.createNativeQuery("DELETE FROM import_quarantine q WHERE q.job_id=:job AND NOT EXISTS (SELECT 1 FROM review_quarantine r WHERE r.entity_type=q.entity_type AND r.record_key=q.record_key)")
                 .setParameter("job",id).executeUpdate();
-        if(issueCount>0) {job.status="COMPLETED_WITH_ISSUES";job.error=null;control.ready=true;return;}
-        if(reviewing) {job.status="COMPLETED";job.error=null;control.ready=true;return;}
+        if(issueCount>0) {job.status="COMPLETED_WITH_ISSUES";job.error=null;control.ready=true;completed(job,issueCount);return;}
+        if(reviewing) {job.status="COMPLETED";job.error=null;control.ready=true;completed(job,issueCount);return;}
         var tables=java.util.Map.of("orgaos","load_orgs","itens","load_items","pedidos","load_orders","pedido_itens","load_lines");
         for(String table:java.util.List.of("orgaos","itens","pedidos")) {
             long foreign=((Number)em.createNativeQuery("SELECT COUNT(*) FROM "+table+" WHERE import_job_id IS NULL OR import_job_id<>:job")
@@ -53,6 +55,16 @@ public class ImportFinalizer {
         job.duplicateHeaders=((Number)em.createNativeQuery("SELECT COUNT(*)-(SELECT COUNT(*) FROM load_orgs)-(SELECT COUNT(*) FROM load_items)-(SELECT COUNT(*) FROM load_orders) FROM import_rows WHERE job_id=:job AND source<>'pedido_itens.csv'")
                 .setParameter("job",id).getSingleResult()).longValue();
         job.status="COMPLETED";job.error=null;control.ready=true;
+        completed(job,issueCount);
+    }
+
+    private void completed(ImportJobEntity job,long issues) {
+        cache.invalidateAfterCommit();
+        String id=job.id,status=job.status;
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override public void afterCommit() {LOG.info("import completed job={} status={} issues={}",id,status,issues);}
+                });
     }
 
     private void script(String name,String id) {

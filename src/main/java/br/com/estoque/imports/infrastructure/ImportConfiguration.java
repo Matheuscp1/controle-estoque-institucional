@@ -25,7 +25,8 @@ public class ImportConfiguration {
     @Bean ArchivePreparer archivePreparer(ImportStore store,ArchiveStorage archives) {return new ArchivePreparer(store,archives);}
     @Bean RabbitOutboxPublisher rabbitOutboxPublisher(ImportStore store,RabbitTemplate rabbit) {rabbit.setMandatory(true);return new RabbitOutboxPublisher(store,rabbit);}
     @Bean RabbitBatchListener rabbitBatchListener(BatchProcessor processor,ImportStore store) {return new RabbitBatchListener(processor,store);}
-    @Bean ImportFinalizer importFinalizer(EntityManager em) {return new ImportFinalizer(em);}
+    @Bean ImportFinalizer importFinalizer(EntityManager em,br.com.estoque.shared.infrastructure.ReadResponseCache cache) {return new ImportFinalizer(em,cache);}
+    @Bean ImportProgressLogger importProgressLogger(ImportStore store) {return new ImportProgressLogger(store);}
     @Bean IncrementalImportPublisher incrementalImportPublisher(EntityManager em) {return new IncrementalImportPublisher(em);}
     @Bean IncrementalPublicationScheduler incrementalPublicationScheduler(ImportStore store,IncrementalImportPublisher publisher) {return new IncrementalPublicationScheduler(store,publisher);}
     @Bean ValidationScheduler validationScheduler(ImportStore store,ImportFinalizer finalizer) {return new ValidationScheduler(store,finalizer);}

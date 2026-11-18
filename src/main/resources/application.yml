@@ -1,4 +1,12 @@
 spring:
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    connect-timeout: 200ms
+    timeout: 200ms
+    repositories:
+      enabled: false
   servlet:
     multipart:
       max-file-size: 128MB
@@ -39,3 +47,8 @@ imports:
   enabled: ${IMPORTS_ENABLED:true}
   directory: ${IMPORTS_DIRECTORY:./import-data}
   consumers: ${IMPORT_CONSUMERS:2}
+app:
+  read-cache:
+    enabled: ${READ_CACHE_ENABLED:true}
+    ttl-ms: ${READ_CACHE_TTL_MS:2000}
+    max-response-bytes: 262144

@@ -1,4 +1,14 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   rabbitmq:
     image: rabbitmq:4-management
     environment:
@@ -39,6 +49,9 @@ services:
       DB_USER: estoque
       DB_PASSWORD: ${DB_PASSWORD:-estoque_local}
       RABBIT_HOST: rabbitmq
+      REDIS_HOST: redis
+      READ_CACHE_ENABLED: ${READ_CACHE_ENABLED:-true}
+      READ_CACHE_TTL_MS: ${READ_CACHE_TTL_MS:-2000}
       RABBIT_USER: estoque
       RABBIT_PASSWORD: ${RABBIT_PASSWORD:-estoque_local}
       IMPORTS_ENABLED: "true"

@@ -8,6 +8,7 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 
 public class RabbitBatchListener {
+    private static final org.slf4j.Logger LOG=org.slf4j.LoggerFactory.getLogger(RabbitBatchListener.class);
     private final BatchProcessor processor;
     private final ImportStore store;
     public RabbitBatchListener(BatchProcessor processor,ImportStore store) {this.processor=processor;this.store=store;}
@@ -21,6 +22,7 @@ public class RabbitBatchListener {
         catch(Exception e) {
             // Se o registro da falha também falhar, a exceção mantém a entrega sem confirmação.
             store.failedAttempt(id,e.getMessage());
+            LOG.warn("import batch failed batch={} cause={}",id,e.getClass().getSimpleName());
             channel.basicReject(tag,false);return;
         }
         // O proxy transacional de process() já realizou o commit neste ponto.

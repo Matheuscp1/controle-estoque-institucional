@@ -9,6 +9,7 @@
     import org.springframework.scheduling.annotation.Scheduled;
 
     public class ArchivePreparer {
+        private static final org.slf4j.Logger LOG=org.slf4j.LoggerFactory.getLogger(ArchivePreparer.class);
         private final ImportStore store;
         private final ArchiveStorage archives;
         public ArchivePreparer(ImportStore store,ArchiveStorage archives) {this.store=store;this.archives=archives;}
@@ -17,6 +18,7 @@
         public void prepareNext() {
             String id=store.claimPreparation();
             if(id==null) return;
+            LOG.info("import preparation started job={}",id);
             try(var zip=new ZipFile(archives.path(id).toFile())) {
                 int total=0;
                 for(String source:List.of("orgaos.csv","itens.csv","pedidos.csv","pedido_itens.csv")) {
@@ -39,6 +41,10 @@
                     }
                 }
                 store.preparationDone(id,total);
-            } catch(Exception e) {store.preparationFailed(id,e.getMessage());}
+                LOG.info("import preparation completed job={} batches={}",id,total);
+            } catch(Exception e) {
+                store.preparationFailed(id,e.getMessage());
+                LOG.error("import preparation failed job={} cause={}",id,e.getClass().getSimpleName());
+            }
         }
     }

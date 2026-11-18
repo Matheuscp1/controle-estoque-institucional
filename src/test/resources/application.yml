@@ -1,5 +1,8 @@
 imports:
   enabled: false
+app:
+  read-cache:
+    enabled: false
 spring:
   jpa:
     open-in-view: false

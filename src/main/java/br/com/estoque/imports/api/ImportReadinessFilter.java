@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component @ConditionalOnProperty(name="imports.enabled",havingValue="true")
+@org.springframework.core.annotation.Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE+20)
 public class ImportReadinessFilter extends OncePerRequestFilter {
     private final ImportStore store;
     public ImportReadinessFilter(ImportStore store) {this.store=store;}
