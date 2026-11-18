@@ -18,18 +18,22 @@
     </header>
     <v-main>
       <main class="workspace">
-        <h1>{{ section === 'itens' ? 'Consulta de itens' : 'Pedidos por órgão' }}</h1>
+        <ItemsView v-if="section === 'itens'" />
+        <h1 v-else>Pedidos por órgão</h1>
       </main>
     </v-main>
   </v-app>
 </template>
 
 <script>
+import ItemsView from './ItemsView.vue'
+
 function currentSection() {
   return window.location.hash === '#pedidos' ? 'pedidos' : 'itens'
 }
 
 export default {
+  components: { ItemsView },
   data: () => ({ section: currentSection() }),
   mounted() {
     window.addEventListener('hashchange', this.updateSection)
