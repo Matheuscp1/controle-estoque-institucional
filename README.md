@@ -301,6 +301,7 @@ As respostas da IA não foram consideradas evidência suficiente de correção o
 # Estoque Institucional — front-end
 
 Interface em Vue 2 e Vuetify 2 para o desafio de controle de saldo de itens e pedidos de órgãos públicos.
+Typescript para tipagem e melhor desenvolvimento
 
 ## Executar
 
