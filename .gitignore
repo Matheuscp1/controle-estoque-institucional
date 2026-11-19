@@ -1,6 +1,0 @@
-/target/
-/.idea/
-/.env
-*.log
-/import-data/
-/logs/
