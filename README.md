@@ -41,6 +41,8 @@ Os testes cobrem valores decimais, contrato HTTP, paginação com cancelamento d
 - Consulta de pedidos de um órgão por período e situação, com itens, quantidades e total de pedidos correspondente aos filtros.
 - Cancelamento de pedido confirmado com motivo e atualização da lista.
 
+Durante a carga inicial, o cabeçalho `X-Import-Ready: false` faz a interface mostrar um aviso de dados parciais e desabilitar edição e cancelamento. O painel consulta `GET /api/imports/active` automaticamente a cada cinco segundos para mostrar a etapa, os lotes e os registros publicados; `204` indica que nenhuma carga foi registrada. O tempo exibido começa quando o job é visto no navegador, pois a API ainda não informa seu horário inicial. O percentual descreve somente o processamento dos lotes, sem previsão de término da validação.
+
 As datas de filtro abrangem os dias selecionados no fuso do navegador. O cliente conserva a precisão decimal dos saldos permitidos pela API. A tela informa erros, listas vazias e o bloqueio HTTP 503 da carga inicial.
 
 O histórico de implementação por etapa está no [roadmap](docs/roadmap-frontend.md).

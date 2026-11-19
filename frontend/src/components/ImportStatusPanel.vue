@@ -6,11 +6,8 @@
     </div>
     <p>Os dados disponíveis podem ser consultados. Edição e cancelamento aguardam a validação inicial.</p>
 
-    <form class="import-track-form" @submit.prevent="track">
-      <v-text-field v-model="jobIdInput" label="ID da carga" outlined dense hide-details
-        placeholder="Cole o ID recebido ao enviar o arquivo" />
-      <v-btn type="submit" color="primary" depressed :loading="loading">Acompanhar</v-btn>
-    </form>
+    <p v-if="!job && !loading && !error" class="import-note">Nenhuma carga registrada. O acompanhamento começará após o envio do arquivo.</p>
+    <v-progress-linear v-if="loading && !job" indeterminate color="primary" aria-label="Consultando carga" />
     <p v-if="error" class="field-error" role="alert">{{ error }}</p>
 
     <div v-if="job" class="import-details" aria-live="polite">
@@ -35,12 +32,10 @@
 <script lang="ts">
 import Vue from 'vue'
 import { errorMessage, request } from '../services/api'
-import { batchPercent, formatCount, getImportJob, importPhase, type ImportJob } from '../services/imports'
+import { batchPercent, formatCount, getActiveImport, importPhase, type ImportJob } from '../services/imports'
 
 export default Vue.extend({
   data: () => ({
-    jobIdInput: '',
-    jobId: '',
     job: null as ImportJob | null,
     loading: false,
     error: '',
@@ -63,43 +58,32 @@ export default Vue.extend({
   },
   mounted() {
     this.clockTimer = setInterval(() => { this.now = Date.now() }, 1000)
+    this.load()
   },
   beforeDestroy() {
     if (this.refreshTimer) clearTimeout(this.refreshTimer)
     if (this.clockTimer) clearInterval(this.clockTimer)
     this.pending?.abort()
+    this.pending = null
   },
   methods: {
     formatCount,
-    track() {
-      const id = this.jobIdInput.trim().toLowerCase()
-      if (!/^[a-f0-9]{64}$/.test(id)) {
-        this.error = 'Informe o ID de 64 caracteres retornado pela carga.'
-        return
-      }
-      if (this.refreshTimer) clearTimeout(this.refreshTimer)
-      this.pending?.abort()
-      this.jobId = id
-      this.job = null
-      this.error = ''
-      this.trackingSince = Date.now()
-      this.now = this.trackingSince
-      this.load()
-    },
     async load() {
       const pending = new AbortController()
       this.pending = pending
       this.loading = true
       try {
-        const job = await getImportJob(this.jobId, pending.signal)
+        const job = await getActiveImport(pending.signal)
         if (this.pending !== pending) return
+        if (job?.id !== this.job?.id) {
+          this.trackingSince = job ? Date.now() : 0
+          this.now = Date.now()
+        }
         this.job = job
         this.error = ''
-        if (job.status === 'COMPLETED' || job.status === 'COMPLETED_WITH_ISSUES') {
+        if (job && (job.status === 'COMPLETED' || job.status === 'COMPLETED_WITH_ISSUES')) {
           // Uma leitura operacional confirma o estado atual antes de liberar ações na interface.
-          await request('/itens', { params: { limite: 1 }, signal: pending.signal })
-        } else if (job.status !== 'FAILED') {
-          this.refreshTimer = setTimeout(() => this.load(), 5000)
+          await request('/orgaos', { params: { limite: 1 }, signal: pending.signal })
         }
       } catch (error) {
         if (!pending.signal.aborted) this.error = errorMessage(error)
@@ -107,6 +91,7 @@ export default Vue.extend({
         if (this.pending === pending) {
           this.pending = null
           this.loading = false
+          this.refreshTimer = setTimeout(() => this.load(), 5000)
         }
       }
     },

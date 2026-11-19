@@ -34,6 +34,6 @@ export function formatCount(value: string): string {
   return BigInt(value).toLocaleString('pt-BR')
 }
 
-export function getImportJob(id: string, signal?: AbortSignal): Promise<ImportJob> {
-  return request<ImportJob>(`/imports/${encodeURIComponent(id)}`, { signal })
+export function getActiveImport(signal?: AbortSignal): Promise<ImportJob | null> {
+  return request<ImportJob | null>('/imports/active', { signal })
 }

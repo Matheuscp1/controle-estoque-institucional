@@ -5,8 +5,7 @@ import { importReadiness } from '../services/api'
 import ImportStatusPanel from './ImportStatusPanel.vue'
 
 const flushPromises = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
-const id = 'a'.repeat(64)
-const stubs = ['v-icon', 'v-text-field', 'v-btn', 'v-progress-linear']
+const stubs = ['v-icon', 'v-progress-linear']
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -14,36 +13,50 @@ afterEach(() => {
 })
 
 describe('painel da carga inicial', () => {
-  it('mantém o aviso visível sem ID e valida antes de consultar', async () => {
-    const fetchMock = vi.fn()
+  it('consulta a carga ativa ao abrir e explica a ausência de job', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(ImportStatusPanel, { stubs })
-
-    expect(wrapper.text()).toContain('Edição e cancelamento aguardam a validação inicial')
-    ;(wrapper.vm as any).jobIdInput = 'inválido'
-    ;(wrapper.vm as any).track()
     await flushPromises()
-    expect(fetchMock).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('ID de 64 caracteres')
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/imports/active')
+    expect(wrapper.text()).toContain('Nenhuma carga registrada')
+    expect(wrapper.find('form').exists()).toBe(false)
     wrapper.destroy()
   })
 
-  it('mostra a etapa, o progresso dos lotes e os dados publicados', async () => {
+  it('mostra automaticamente a etapa, os lotes e os dados publicados', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      id, status: 'STAGING', preparedBatches: 4, completedBatches: 2,
+      id: 'abc', status: 'STAGING', preparedBatches: 4, completedBatches: 2,
       totalBatches: 4, publishedItems: 50000, publishedOrders: 1200, issues: 0, error: null,
     }), { headers: { 'Content-Type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(ImportStatusPanel, { stubs })
-    ;(wrapper.vm as any).jobIdInput = id
-    ;(wrapper.vm as any).track()
     await flushPromises()
 
-    expect(fetchMock.mock.calls[0][0]).toBe(`/api/imports/${id}`)
     expect(wrapper.text()).toContain('Processando registros')
     expect(wrapper.text()).toContain('2 de 4 lotes (50%)')
     expect(wrapper.text()).toContain('50.000')
     expect(wrapper.text()).toContain('1.200')
+    wrapper.destroy()
+  })
+
+  it('confirma liberação pela API operacional após conclusão', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'abc', status: 'COMPLETED', preparedBatches: 4, completedBatches: 4,
+        totalBatches: 4, publishedItems: 50000, publishedOrders: 1200, issues: 0, error: null,
+      }), { headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response('{"registros":[],"total":0}', {
+        headers: { 'Content-Type': 'application/json', 'X-Import-Ready': 'true' },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+    importReadiness.ready = false
+    const wrapper = mount(ImportStatusPanel, { stubs })
+    await flushPromises()
+
+    expect(fetchMock.mock.calls[1][0]).toContain('/api/orgaos')
+    expect(importReadiness.ready).toBe(true)
     wrapper.destroy()
   })
 })
