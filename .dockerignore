@@ -4,3 +4,13 @@ target
 *.pdf
 *.zip
 .env
+logs
+import-data
+*.log
+src/test
+# Local legacy prototypes; the application uses the modular controllers/services.
+src/main/java/br/com/estoque/ApiController.java
+src/main/java/br/com/estoque/ApiErrors.java
+src/main/java/br/com/estoque/Contratos.java
+src/main/java/br/com/estoque/ErroNegocio.java
+src/main/java/br/com/estoque/EstoqueService.java

@@ -37,6 +37,8 @@ Para compilar com Java 17 e Maven:
 mvn package
 ```
 
+O build da imagem compila e empacota somente o código de produção, sem executar os testes. Execute `mvn test` antes de entregar: os testes de integração precisam do Docker disponível na máquina, fora do build da imagem. O processo do container usa UID/GID `10001`, com escrita habilitada em `/app/logs` e `/data/imports`. Volumes novos de importação herdam essas permissões. Volumes existentes ou diretórios montados manualmente precisam permitir escrita para esse usuário; não remova volumes com dados para corrigir permissões.
+
 Para executar sem Docker, disponibilize PostgreSQL, configure `DB_URL`, `DB_USER` e `DB_PASSWORD` e execute `mvn spring-boot:run`.
 
 ## Arquitetura e API
