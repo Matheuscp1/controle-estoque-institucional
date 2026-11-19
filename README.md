@@ -350,3 +350,6 @@ O histórico de implementação por etapa está no [roadmap](docs/roadmap-fronte
 ## Uso de IA
 
 O Codex cruzou o enunciado com os contratos da API, para melhor desempenho com teste
+
+## Tela inicial
+<img width="1212" height="796" alt="image" src="https://github.com/user-attachments/assets/a44eac21-a98a-4861-aa18-4f02dbba5f47" />
