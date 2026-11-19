@@ -1,0 +1,206 @@
+{
+  "contagens": {
+    "itens.csv.linhas": 50000,
+    "itens.saldo_diverge_do_historico_bruto": 2824,
+    "linhas.item_atualmente_inativo": 76029,
+    "linhas.item_inexistente": 250,
+    "linhas.par_duplicado": 4513,
+    "linhas.pares_distintos": 2325532,
+    "linhas.pedido_inexistente": 150,
+    "linhas.quantidade_invalida": 200,
+    "orgaos.csv.linhas": 250,
+    "pedido_itens.csv.linhas": 2330045,
+    "pedidos.cancelamento_anterior": 1,
+    "pedidos.cancelamento_incompleto": 13547,
+    "pedidos.csv.linhas": 1002000,
+    "pedidos.data_sem_fuso": 1000000,
+    "pedidos.id_duplicado_identico": 2000,
+    "pedidos.ids_distintos": 1000000,
+    "pedidos.mais_de_100_linhas": 3,
+    "pedidos.orgao_inexistente": 300,
+    "pedidos.sem_linhas": 100
+  },
+  "exemplos": {
+    "pedidos.cancelamento_incompleto": [
+      "0dd96a0f-3f0c-4b28-9432-c2dd3596503c",
+      "2a85592c-8217-463a-84a7-d8ce798070ff",
+      "55a444bb-2968-4913-83a3-9c234c20344d",
+      "2c93ddf5-3457-4619-822e-bf54a98dffea",
+      "8758fc63-5578-4792-b2f7-f0581a27792a"
+    ],
+    "pedidos.orgao_inexistente": [
+      "cddf5525-089d-4ecb-829e-166a67600682",
+      "51cf8994-fde8-43b0-915d-cdb8ba3f50ea",
+      "4bc66030-3b8d-4092-8934-577b153e6b92",
+      "378de63e-82b3-43da-85e7-3e5443b798bd",
+      "048c4eff-aa85-47d4-a400-8fb37da33b29"
+    ],
+    "pedidos.id_duplicado_identico": [
+      "905b9325-cfe3-4b50-9fd5-6ab79a82e705",
+      "70cf4111-c6f4-4927-bd0c-3c7ad2b96bbe",
+      "218c6d31-7450-45d2-aab7-ecf0ed2f7059",
+      "41fe55cc-3a4e-4d52-ad08-65fe16180fba",
+      "b87874b4-0fbc-4a84-b2de-01dc54a47df8"
+    ],
+    "pedidos.cancelamento_anterior": [
+      "42bb7030-dca3-4637-9779-762e23ba2e40"
+    ],
+    "linhas.item_inexistente": [
+      "a59db022-b275-41c3-b8e3-6e1ca53469f2/ITM-962555",
+      "72144a72-05f1-448e-926f-27448ba27589/ITM-995947",
+      "e2ec5f10-52d1-4c7d-bad9-65c573c2da41/ITM-926036",
+      "28bd2c05-c98c-416c-9dd7-3d133a4302e8/ITM-953575",
+      "882c1f11-00ed-4914-af13-655d028caaf6/ITM-927716"
+    ],
+    "linhas.pedido_inexistente": [
+      "0a678ce6-3e99-4e2e-af85-37a7b38f1765/ITM-019775",
+      "acf788ca-49af-47b8-8578-6a59e0b63d6c/ITM-007193",
+      "25856430-7c3a-41c8-8f58-9e2aff936bbd/ITM-033542",
+      "ef7ee94c-93ed-4a54-a9d1-009ba85b2992/ITM-010338",
+      "2fd0f2a4-cf84-4b8e-ba68-baa654f6f5b9/ITM-016460"
+    ],
+    "linhas.quantidade_invalida": [
+      "a3ce53f7-808a-47c0-8cad-2527af560f84/ITM-045677",
+      "fb352cf4-80fc-4b15-83a1-f2d946b8451b/ITM-040306",
+      "5cdb4d7e-e98b-47c2-b2ba-ef51ebed6802/ITM-031689",
+      "c560b9ae-51f5-4d8c-9cf7-c184838d5a26/ITM-043687",
+      "e859a323-cbf5-4e1d-aedd-16028aa60a9d/ITM-015255"
+    ],
+    "linhas.par_duplicado": [
+      "16b1c3c8-c69b-4896-a971-32af5fcf3605/ITM-033029",
+      "3d301913-e67c-45f0-ab19-464b57c80e89/ITM-047806",
+      "f59c9002-6c54-454c-9c58-84339a78d044/ITM-033943",
+      "bb7be160-d2d3-44f0-b03e-51364ea41901/ITM-010485",
+      "9a17021b-9a63-4daa-8c5e-dd9090de5d78/ITM-012043"
+    ],
+    "pedidos.sem_linhas": [
+      "960a2b2b-9274-40c3-b714-4db52adcd05c",
+      "d373f799-84a2-492e-ac4c-d8546f19e151",
+      "ce6e8371-029d-4ea5-8e50-2e437c614c08",
+      "be9b29f2-9b8c-4580-a0fd-707bf5343a64",
+      "b0cc197a-baec-4b96-9d91-3a97bf021c86"
+    ],
+    "pedidos.mais_de_100_linhas": [
+      "b6a7104e-047d-41c2-8f3c-90c776975781",
+      "3d301913-e67c-45f0-ab19-464b57c80e89",
+      "94ef4ebf-7883-4305-ae8d-d7a1b62e4f0a"
+    ],
+    "itens.saldo_diverge_do_historico_bruto": [
+      "ITM-000003",
+      "ITM-000010",
+      "ITM-000040",
+      "ITM-000054",
+      "ITM-000079"
+    ]
+  },
+  "dominios": {
+    "uf": {
+      "AL": 9,
+      "RN": 18,
+      "MS": 10,
+      "PB": 6,
+      "PE": 9,
+      "TO": 8,
+      "RO": 9,
+      "DF": 14,
+      "RS": 7,
+      "CE": 8,
+      "BA": 9,
+      "SE": 6,
+      "MG": 9,
+      "ES": 8,
+      "SC": 5,
+      "SP": 6,
+      "PI": 13,
+      "AM": 9,
+      "MA": 7,
+      "PA": 6,
+      "GO": 10,
+      "AC": 11,
+      "MT": 13,
+      "PR": 13,
+      "RR": 5,
+      "RJ": 11,
+      "AP": 11
+    },
+    "unidade": {
+      "UN": 16726,
+      "RL": 4064,
+      "FR": 3795,
+      "PCT": 7278,
+      "GL": 2451,
+      "CX": 9664,
+      "KG": 1613,
+      "Rl": 47,
+      "FD": 1574,
+      "RESMA": 784,
+      " PCT": 83,
+      "un": 168,
+      "L": 512,
+      "fr": 45,
+      "Kg": 15,
+      "cx": 104,
+      "Pct": 80,
+      "gl": 27,
+      "Cx": 117,
+      "Un": 164,
+      "pct": 73,
+      " RL": 46,
+      " FR": 41,
+      " CX": 96,
+      " UN": 184,
+      "Fd": 19,
+      " GL": 20,
+      "Fr": 46,
+      "Resma": 7,
+      "rl": 41,
+      "kg": 23,
+      " FD": 26,
+      "resma": 7,
+      " KG": 14,
+      "Gl": 24,
+      " L": 5,
+      "l": 6,
+      " RESMA": 5,
+      "fd": 6
+    },
+    "ativo": {
+      "S": 48036,
+      "N": 1964
+    },
+    "origem": {
+      "INTEGRACAO": 350945,
+      "PORTAL": 649055
+    },
+    "situacao": {
+      "CONFIRMADO": 930254,
+      "CANCELADO": 69746
+    }
+  },
+  "comprimentos_maximos": {
+    "orgaos.csv.codigo": 8,
+    "orgaos.csv.sigla": 8,
+    "orgaos.csv.nome": 54,
+    "orgaos.csv.uf": 2,
+    "itens.csv.codigo": 10,
+    "itens.csv.descricao": 67,
+    "itens.csv.unidade": 6,
+    "itens.csv.saldo_inicial": 7,
+    "itens.csv.saldo_atual": 5,
+    "itens.csv.ativo": 1,
+    "itens.csv.data_cadastro": 10,
+    "pedidos.csv.id_externo": 36,
+    "pedidos.csv.codigo_orgao": 8,
+    "pedidos.csv.solicitante": 17,
+    "pedidos.csv.origem": 10,
+    "pedidos.csv.data_hora": 19,
+    "pedidos.csv.situacao": 10,
+    "pedidos.csv.data_cancelamento": 19,
+    "pedidos.csv.motivo_cancelamento": 31,
+    "pedido_itens.csv.id_externo_pedido": 36,
+    "pedido_itens.csv.codigo_item": 10,
+    "pedido_itens.csv.quantidade": 3
+  },
+  "maximo_linhas_por_pedido": 110,
+  "observacao": "Diagnostico, nao importacao. Reconciliacao usa primeiro cabecalho por ID e todas as linhas positivas com referencias existentes, inclusive pares repetidos. Divergencias precisam ser reavaliadas apos saneamento."
+}
