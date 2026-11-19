@@ -1,11 +1,14 @@
-WITH candidates AS (
+WITH batch_candidates AS (
  SELECT r.code FROM import_batches b
  CROSS JOIN LATERAL jsonb_object_keys(CAST(b.order_counts AS jsonb)) r(code)
- WHERE b.id=:batch AND b.job_id=:job AND b.order_counts IS NOT NULL
+ WHERE b.id IN (:batches) AND b.job_id=:job AND b.order_counts IS NOT NULL
  UNION
  SELECT DISTINCT substring(r.value->'fields'->>'id_externo_pedido',1,128) AS code
  FROM import_batches b CROSS JOIN LATERAL jsonb_array_elements(CAST(b.payload AS jsonb)->'rows') r(value)
- WHERE b.id=:batch AND b.job_id=:job AND b.order_counts IS NULL
+ WHERE b.id IN (:batches) AND b.job_id=:job AND b.order_counts IS NULL
+), candidates AS MATERIALIZED (
+ SELECT c.code FROM batch_candidates c
+ WHERE NOT EXISTS (SELECT 1 FROM pedidos p WHERE p.id_externo=c.code)
 ), headers AS (
  SELECT r.record_key AS code,CAST(MIN(r.payload) AS jsonb) AS data
  FROM import_rows r JOIN candidates c ON c.code=r.record_key

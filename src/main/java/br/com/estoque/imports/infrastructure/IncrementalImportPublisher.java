@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /** Insere dados provisórios, mantendo o acesso operacional bloqueado até a reconciliação final. */
 public class IncrementalImportPublisher {
+    public static final int PUBLICATION_BATCH_LIMIT=8;
     private final EntityManager em;
     public IncrementalImportPublisher(EntityManager em) {this.em=em;}
 
@@ -80,18 +81,34 @@ public class IncrementalImportPublisher {
 
     @Transactional
     public void publishBatch(String batchId) {
+        publishBatches(List.of(batchId));
+    }
+
+    @Transactional
+    public void publishBatches(List<String> batchIds) {
+        var ids=batchIds.stream().distinct().sorted().toList();
+        if(ids.isEmpty())return;
+        if(ids.size()>PUBLICATION_BATCH_LIMIT)throw new IllegalArgumentException("Too many publication batches");
         // Leitores compartilham o lock; a substituição de uma carga e a liberação final exigem lock exclusivo.
         var control=em.find(ImportControlEntity.class,1,LockModeType.PESSIMISTIC_READ);
-        var batch=em.find(ImportBatchEntity.class,batchId,LockModeType.PESSIMISTIC_WRITE);
-        if(batch==null||!batch.done||batch.publicationDone||!batch.source.equals("pedido_itens.csv"))return;
-        var job=em.find(ImportJobEntity.class,batch.jobId);
+        // Lock in a stable order so overlapping deliveries cannot deadlock on batch rows.
+        var batches=new ArrayList<ImportBatchEntity>();
+        for(String id:ids) {
+            var batch=em.find(ImportBatchEntity.class,id,LockModeType.PESSIMISTIC_WRITE);
+            if(batch!=null&&batch.done&&!batch.publicationDone&&batch.source.equals("pedido_itens.csv"))batches.add(batch);
+        }
+        if(batches.isEmpty())return;
+        String jobId=batches.get(0).jobId;
+        if(batches.stream().anyMatch(b->!b.jobId.equals(jobId)))throw new IllegalArgumentException("Batches must belong to the same import");
+        var job=em.find(ImportJobEntity.class,jobId);
         if(!active(control,job)||!job.manifestReady||!sourceDone(job.id,"pedidos.csv")
                 ||!sourcePublished(job.id,"orgaos.csv")||!sourcePublished(job.id,"itens.csv"))return;
-        Object[] counts=(Object[])query("publish-orders.sql",job.id).setParameter("batch",batchId).getSingleResult();
+        Object[] counts=(Object[])query("publish-orders.sql",job.id)
+                .setParameter("batches",batches.stream().map(b->b.id).toList()).getSingleResult();
         em.createNativeQuery("UPDATE import_jobs SET published_orders=published_orders+:orders,published_lines=published_lines+:lines WHERE id=:job")
                 .setParameter("orders",((Number)counts[0]).longValue()).setParameter("lines",((Number)counts[1]).longValue())
                 .setParameter("job",job.id).executeUpdate();
-        batch.publicationDone=true;
+        batches.forEach(b->b.publicationDone=true);
     }
 
     private boolean sourceDone(String id,String source) {

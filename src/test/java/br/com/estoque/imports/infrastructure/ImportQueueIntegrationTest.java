@@ -55,6 +55,7 @@ class ImportQueueIntegrationTest {
     @Autowired RabbitOutboxPublisher publisher;
     @Autowired ImportFinalizer finalizer;
     @Autowired IncrementalImportPublisher incremental;
+    @Autowired IncrementalPublicationScheduler incrementalScheduler;
     @Autowired ImportReview review;
     @Autowired BatchProcessor processor;
     @Autowired JdbcTemplate db;
@@ -287,11 +288,10 @@ class ImportQueueIntegrationTest {
         });
         var lastLog=new java.util.concurrent.atomic.AtomicLong();
         try {
-          await().atMost(Duration.ofMinutes(30)).pollInterval(Duration.ofMillis(100)).until(()->{
+          await().atMost(Duration.ofMinutes(Long.getLong("mass.timeout.minutes",120L))).pollInterval(Duration.ofMillis(100)).until(()->{
             if(reading.isDone())reading.get();
             if(dispatch.isDone())dispatch.get();
-            incremental.publishCatalogs(id);incremental.prepareManifest(id);
-            for(String batch:incremental.pendingBatches(id))incremental.publishBatch(batch);
+            incrementalScheduler.publish();
             var progress=store.status(id);
             assertThat(progress.status()).isIn("PREPARING","STAGING");
             if(progress.publishedItems()>0)firstItemsAt.compareAndSet(0,System.nanoTime());
@@ -393,6 +393,33 @@ class ImportQueueIntegrationTest {
         assertThat(store.status(id).status()).isEqualTo("COMPLETED");
     }
 
+    @Test void falhaNoGrupoDesfazTodosOsPedidosContadoresEMarcadores() throws Exception {
+        String id=start(archive(false,false,false));preparer.prepareNext();
+        db.update("UPDATE import_jobs SET status='PREPARING' WHERE id=?",id);
+        store.addBatch(id,"pedido_itens.csv",1,new br.com.estoque.imports.domain.BatchPayload(List.of(
+                new br.com.estoque.imports.domain.BatchPayload.Row(20,Map.of("id_externo_pedido","AUSENTE","codigo_item","A","quantidade","1")))));
+        store.sourcePrepared(id,"pedido_itens.csv",2);store.preparationDone(id,5);
+        for(String batch:db.queryForList("SELECT id FROM import_batches WHERE job_id=?",String.class,id))processor.process(batch);
+        incremental.publishCatalogs(id);incremental.prepareManifest(id);
+        var batches=incremental.pendingBatches(id);
+        assertThat(batches).hasSize(2);
+        db.execute("ALTER TABLE pedidos ADD CONSTRAINT test_reject_group CHECK(id_externo<>'P2')");
+        try {
+            assertThatThrownBy(()->incremental.publishBatches(batches)).isInstanceOf(RuntimeException.class);
+            assertThat(db.queryForObject("SELECT COUNT(*) FROM pedidos",Integer.class)).isZero();
+            assertThat(db.queryForObject("SELECT COUNT(*) FROM pedido_itens",Integer.class)).isZero();
+            assertThat(db.queryForObject("SELECT COUNT(*) FROM import_batches WHERE publication_done=true",Integer.class)).isZero();
+            assertThat(store.status(id).publishedOrders()).isZero();
+            assertThat(store.status(id).publishedOrderLines()).isZero();
+        }finally {db.execute("ALTER TABLE pedidos DROP CONSTRAINT test_reject_group");}
+        incremental.publishBatches(batches);
+        // Force a replay through SQL, rather than just the completed-batch guard.
+        db.update("UPDATE import_batches SET publication_done=false WHERE source='pedido_itens.csv'");
+        incremental.publishBatches(batches);
+        assertThat(store.status(id).publishedOrders()).isEqualTo(2);
+        assertThat(store.status(id).publishedOrderLines()).isEqualTo(2);
+    }
+
     @Test void catalogosEntramAntesDeTodosOsLotesTerminarem() throws Exception {
         String id=start(archive(false,false,false));preparer.prepareNext();
         db.update("UPDATE import_jobs SET status='PREPARING' WHERE id=?",id);
@@ -410,7 +437,9 @@ class ImportQueueIntegrationTest {
                 .andExpect(status().isServiceUnavailable());
     }
 
-    @Test void pedidoEsperaTodasAsLinhasEReentregasConcorrentesNaoDuplicam() throws Exception {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans={false,true})
+    void pedidoEsperaTodasAsLinhasEReentregasConcorrentesNaoDuplicam(boolean grouped) throws Exception {
         String id=start(archive(false,false,true));preparer.prepareNext();
         String first=db.queryForObject("SELECT id FROM import_batches WHERE source='pedido_itens.csv'",String.class);
         var json=new com.fasterxml.jackson.databind.ObjectMapper();
@@ -430,8 +459,8 @@ class ImportQueueIntegrationTest {
         processor.process(last);
         db.update("UPDATE import_batches SET publication_done=false WHERE id=?",first);
         var pool=Executors.newFixedThreadPool(2);var go=new CountDownLatch(1);
-        Callable<Void> publishFirst=()->{go.await();incremental.publishBatch(first);return null;};
-        Callable<Void> publishLast=()->{go.await();incremental.publishBatch(last);return null;};
+        Callable<Void> publishFirst=()->{go.await();if(grouped)incremental.publishBatches(List.of(first,last,first));else incremental.publishBatch(first);return null;};
+        Callable<Void> publishLast=()->{go.await();if(grouped)incremental.publishBatches(List.of(last,first));else incremental.publishBatch(last);return null;};
         try {var a=pool.submit(publishFirst);var b=pool.submit(publishLast);go.countDown();a.get(20,TimeUnit.SECONDS);b.get(20,TimeUnit.SECONDS);}
         finally {pool.shutdownNow();}
         incremental.publishBatch(last);
@@ -439,6 +468,7 @@ class ImportQueueIntegrationTest {
         assertThat(db.queryForObject("SELECT COUNT(*) FROM pedido_itens",Integer.class)).isEqualTo(3);
         assertThat(store.status(id).publishedOrders()).isEqualTo(2);
         assertThat(store.status(id).publishedOrderLines()).isEqualTo(3);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM import_batches WHERE source='pedido_itens.csv' AND publication_done=true",Integer.class)).isEqualTo(2);
         assertThat(db.queryForObject("SELECT saldo FROM itens WHERE codigo='A'",java.math.BigDecimal.class)).isEqualByComparingTo("7");
         assertThat(store.ready()).isFalse();
     }

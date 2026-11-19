@@ -57,14 +57,46 @@ Depois da validação inicial, `X-Import-Ready: true` indica que o bloqueio glob
 1. Ao terminar cada CSV, o leitor registra sua quantidade de lotes. Órgãos e itens são inseridos assim que os consumidores terminam o respectivo arquivo e os registros locais são válidos. Não é necessário esperar os pedidos.
 2. Após a leitura do ZIP, um manifesto calcula quantas linhas cada pedido deve receber, a partir dos lotes persistidos. Isso não exige que os consumidores tenham terminado. Como o CSV pode estar fora de ordem, a primeira linha recebida não indica um pedido completo.
 3. Cada lote consumido de linhas identifica pedidos candidatos. Um pedido entra somente quando todas as linhas chegaram, o cabeçalho é válido e inequívoco, as referências existem e não há pares pedido/item repetidos.
-4. Cabeçalho, linhas, contadores e marcador são gravados na mesma transação. Uma falha desfaz esse lote; outros lotes já gravados permanecem.
+4. A publicação reúne até oito lotes consumidos por transação. Pedidos candidatos são deduplicados entre os lotes; identificadores já publicados são descartados antes de consultar novamente cabeçalhos e linhas. Cabeçalhos, linhas, contadores e marcadores são gravados juntos. Uma falha desfaz todo o grupo; grupos anteriores permanecem. Os locks dos lotes seguem uma ordem estável, e a restrição única do pedido continua protegendo contra publicações concorrentes.
 5. A conferência global reconcilia o saldo final e o histórico. A carga termina em `COMPLETED` ou `COMPLETED_WITH_ISSUES`. As pendências geram restrições específicas para impedir movimentações inconsistentes, permitindo operar os demais dados.
 
 `GET /api/imports/{id}` inclui `preparedBatches`, `completedBatches`, `publishedOrganizations`, `publishedItems`, `publishedOrders` e `publishedOrderLines`. Os quatro últimos contadores representam inserts provisórios concluídos. Durante `PREPARING`, `totalBatches` ainda pode ser zero porque o leitor não conhece o total final.
 
 ## Processamento e concorrência
 
+A publicação agrupada reduz transações e verificações repetidas, sem aumentar o lote de leitura do ZIP nem remover validações. O manifesto continua exigindo todas as linhas de cada pedido. O ganho de tempo da alteração ainda precisa ser medido com a massa completa em ambiente separado; os testes de integração verificam rollback, reentrega e grupos concorrentes sobrepostos.
+
+Na execução local de 19/11/2026, **anterior à publicação agrupada**, o upload respondeu em 7,69 segundos. Do registro da carga (11:16:15) à conclusão (12:18:33), decorreram aproximadamente 1h02min19s. Foram publicados 250 órgãos, 50.000 itens, 997.149 pedidos e 2.319.169 linhas, com 9.843 ocorrências e status `COMPLETED_WITH_ISSUES`. Essa medição inclui processamento e validação final, não apenas o envio do ZIP, e não representa uma previsão para outros ambientes.
+
 O leitor mantém até 500 registros por lote. O conteúdo e a identificação determinística do lote são registrados no PostgreSQL antes da publicação. RabbitMQ recebe somente o ID do lote; as mensagens e filas são duráveis. O publicador exige confirmação do broker e republica lotes pendentes após expirar sua reserva.
+
+### Volume e dimensionamento dos lotes
+
+O ZIP de referência tem 99.025.999 bytes (aproximadamente 94,44 MiB). As contagens abaixo excluem os cabeçalhos dos CSVs. Cada arquivo encerra seu próprio último lote; a quantidade é `arredondarParaCima(registros / 500)` por arquivo.
+
+| Arquivo | Registros de entrada | Lotes de até 500 registros |
+| --- | ---: | ---: |
+| `orgaos.csv` | 250 | 1 |
+| `itens.csv` | 50.000 | 100 |
+| `pedidos.csv` | 1.002.000 | 2.004 |
+| `pedido_itens.csv` | 2.330.045 | 4.661 |
+| **Total** | **3.382.295** | **6.766** |
+
+São 6.766 lotes lógicos; reentregas podem gerar mais mensagens RabbitMQ, sem duplicar os registros. Registros de entrada, pedidos publicados e ocorrências são medidas diferentes: cabeçalhos duplicados são consolidados e registros inconsistentes ficam preservados para revisão. Uma ocorrência não equivale necessariamente a um pedido rejeitado.
+
+| Etapa | Limite atual | Finalidade |
+| --- | --- | --- |
+| Leitura do CSV | 500 registros por lote | Limitar memória e permitir retomada por lote. |
+| Despacho para RabbitMQ | Até 128 IDs por ciclo | Reservar os lotes que aguardam envio. |
+| Consumo | 2 consumidores; prefetch 2 por consumidor | Limitar mensagens simultâneas aguardando confirmação. |
+| Gravação JPA da preparação | Batches JDBC de 50 registros | Agrupar inserts dentro da transação de cada lote. |
+| Publicação de pedidos | Até 8 lotes de linhas por transação | Compartilhar consultas e commit entre lotes. |
+
+Se todos os 4.661 lotes de linhas estiverem disponíveis, a publicação pode reuni-los em 583 grupos. Durante o consumo incremental, grupos menores podem aumentar esse número. O grupo seleciona candidatos a partir de até 4.000 linhas de origem; isso **não limita o total de linhas inseridas a 4.000**, pois cada pedido candidato é consultado por inteiro. O pedido só entra quando todas as suas linhas estão disponíveis e válidas.
+
+Para planejamento local, use **cerca de uma hora como referência observada**, sem garantia de prazo. O upload de 7,69 s mede apenas o recebimento; a duração de 1h02min19s inclui preparação, fila, publicação e validação. A versão com grupos de oito ainda precisa de nova medição completa. Não se deve dividir o tempo anterior por oito: manifesto, consumo e validação continuam tendo seus próprios custos. Hardware, disco, recursos do Docker e consultas concorrentes também influenciam o resultado.
+
+### Persistência e reentregas
 
 Cada consumidor bloqueia o lote, verifica se ele já terminou, grava a preparação via JPA em batches de 50 registros e marca a conclusão na mesma transação. O `ACK` ocorre depois do commit. Se houver reentrega após o commit, o marcador impede processamento duplicado. Falhas técnicas do consumidor são registradas, a entrega segue para `imports.failed` e o publicador agenda nova tentativa; após oito falhas, a carga fica em `FAILED`.
 
@@ -74,7 +106,7 @@ O lote guarda contagens compactas por pedido para evitar reler seu JSON completo
 
 A inserção incremental usa SQL em conjunto pelo `EntityManager`. A chave única `pedidos.id_externo` decide entre transações concorrentes; `ON CONFLICT DO NOTHING RETURNING` retorna somente os pedidos realmente criados, e suas linhas são inseridas na mesma instrução. A ordem de inserção dos identificadores é determinística. Marcadores e contadores são transacionais, inclusive quando lotes diferentes contêm linhas do mesmo pedido.
 
-O agrupamento `complete_lines` usa `MATERIALIZED` para calcular a completude e a assinatura dos pedidos uma vez por lote. Na investigação de uma carga lenta em 18/11/2026, o plano anterior repetia esse agrupamento 499 vezes no lote analisado. Uma comparação somente de leitura da seleção dos mesmos candidatos levou 11,74 s antes e 0,56 s com materialização. Essa medição isolada, com a importação ativa, não inclui os inserts nem permite extrapolar a duração total da carga.
+O agrupamento `complete_lines` usa `MATERIALIZED` para calcular a completude e a assinatura dos pedidos uma vez por grupo de publicação. Na investigação de uma carga lenta em 18/11/2026, o plano anterior repetia esse agrupamento 499 vezes no lote analisado. Uma comparação somente de leitura da seleção dos mesmos candidatos levou 11,74 s antes e 0,56 s com materialização. Essa medição isolada, com a importação ativa, não inclui os inserts nem permite extrapolar a duração total da carga.
 
 `import_rows` preserva campos originais e normalizados. `import_sources` registra o término de cada arquivo e `import_order_manifest` registra a quantidade esperada de linhas por pedido. A validação global verifica referências, duplicidades, saldo final e saldo histórico sem depender da ordem das mensagens.
 
@@ -115,6 +147,8 @@ mvn "-Dtest=LegacyRowTest,ImportQueueIntegrationTest" test
 
 A suíte exige Docker e cria PostgreSQL e RabbitMQ isolados. A massa completa é um teste optativo, separado dos testes pequenos:
 
+O teste usa o mesmo agendador de publicação agrupada da aplicação. A espera pelo consumo e publicação tem limite padrão de 120 minutos, configurável com `-Dmass.timeout.minutes=180`, por exemplo. Esse limite de espera não é uma estimativa de duração e não inclui a validação final executada em seguida.
+
 ```powershell
 mvn "-Dtest=ImportQueueIntegrationTest#massaCompletaPassaPelaFilaEPreservaInconsistencias" "-Dmass.file=massa-dados/massa-dados-candidato.zip" test
 ```
@@ -127,7 +161,7 @@ RabbitMQ permite desacoplar preparação e consumo, controlar concorrência e re
 
 Os testes pequenos cobrem inserts do catálogo antes do fim da carga, pedidos com linhas distribuídas entre lotes, reentregas concorrentes, rollback das linhas e dos marcadores, retomada de cargas antigas e substituição restrita a registros provisórios.
 
-A execução da massa completa em 18/11/2026 foi interrompida quando o disco C: ficou com aproximadamente 58 MB livres. Antes da interrupção, o progresso registrou 50.000 itens inseridos enquanto a preparação e o consumo continuavam. Essa observação parcial não comprova o processamento completo nem permite comparar a duração total com a implementação anterior. O relatório de desempenho incremental ainda precisa ser produzido em uma execução completa com espaço disponível; os números da seção seguinte pertencem à versão anterior.
+A execução da massa completa em 18/11/2026 foi interrompida quando o disco C: ficou com aproximadamente 58 MB livres. Antes da interrupção, o progresso registrou 50.000 itens inseridos enquanto a preparação e o consumo continuavam. A nova execução de 19/11/2026 foi concluída e está descrita em “Processamento e concorrência”, acima. Ainda falta comparar a publicação agrupada com essa referência. Os números da seção seguinte pertencem à versão anterior ao fluxo incremental.
 
 ## Resultado da massa original
 

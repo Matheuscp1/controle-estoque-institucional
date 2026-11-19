@@ -15,7 +15,9 @@ public class IncrementalPublicationScheduler {
             try {
                 publisher.publishCatalogs(id);
                 publisher.prepareManifest(id);
-                for(String batch:publisher.pendingBatches(id))publisher.publishBatch(batch);
+                var batches=publisher.pendingBatches(id);
+                for(int offset=0;offset<batches.size();offset+=IncrementalImportPublisher.PUBLICATION_BATCH_LIMIT)
+                    publisher.publishBatches(batches.subList(offset,Math.min(batches.size(),offset+IncrementalImportPublisher.PUBLICATION_BATCH_LIMIT)));
             }catch(Exception e){LOG.error("Inserção incremental da carga {} falhou e será repetida",id,e);}
         }
     }

@@ -111,7 +111,7 @@ Para executar os testes sem Docker, excluindo explicitamente a suíte PostgreSQL
 mvn "-Dtest=*,!OrdersPostgresTest,!ImportQueueIntegrationTest" test
 ```
 
-Os testes pequenos verificam regras e concorrência funcional. Na implementação anterior, a execução optativa da massa completa processou os 3.382.295 registros em preparação e terminou em `NEEDS_REVIEW`, sem publicação operacional. A medição completa do fluxo incremental ainda está pendente: a execução local foi interrompida por falta de espaço em disco. Os resultados e limites estão no [guia de importação](docs/importacao.md#resultado-da-massa-original).
+Os testes pequenos verificam regras e concorrência funcional. Em 19/11/2026, a massa completa terminou em `COMPLETED_WITH_ISSUES` em aproximadamente 1h02min19s no ambiente local. Essa medição é anterior à otimização que publica até oito lotes por transação e evita recalcular pedidos já inseridos; o ganho dessa alteração ainda não foi medido na massa completa. Os resultados e limites estão no [guia de importação](docs/importacao.md).
 
 ## Tratamento dos dados legados
 
