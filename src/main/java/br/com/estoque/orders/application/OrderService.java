@@ -3,7 +3,7 @@ package br.com.estoque.orders.application;
 import br.com.estoque.orders.domain.*;
 import java.time.*;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
+import br.com.estoque.shared.application.PageResult;
 
 public class OrderService {
     private final OrderRepository repository;
@@ -54,7 +54,7 @@ public class OrderService {
         });
     }
 
-    public List<Order> list(OrderFilter filter) {
+    public PageResult<Order> list(OrderFilter filter) {
         return transactions.execute(() -> {
             requireOrganization(filter.organizationCode());
             return repository.list(filter);

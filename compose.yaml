@@ -52,6 +52,7 @@ services:
       REDIS_HOST: redis
       READ_CACHE_ENABLED: ${READ_CACHE_ENABLED:-true}
       READ_CACHE_TTL_MS: ${READ_CACHE_TTL_MS:-2000}
+      API_DOCS_ENABLED: ${API_DOCS_ENABLED:-true}
       RABBIT_USER: estoque
       RABBIT_PASSWORD: ${RABBIT_PASSWORD:-estoque_local}
       IMPORTS_ENABLED: "true"

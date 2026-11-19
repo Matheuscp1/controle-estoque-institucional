@@ -16,7 +16,7 @@ import org.springframework.transaction.support.*;
 @Component
 public class ReadResponseCache {
     private static final Logger LOG=LoggerFactory.getLogger(ReadResponseCache.class);
-    private static final String PREFIX="estoque:{http-v1}:";
+    private static final String PREFIX="estoque:{http-v2}:";
     private static final String GENERATION=PREFIX+"generation";
     private static final DefaultRedisScript<String> INIT=new DefaultRedisScript<>(
             "local v=redis.call('GET',KEYS[1]); if v then return v end; redis.call('SET',KEYS[1],ARGV[1]); return ARGV[1]",String.class);

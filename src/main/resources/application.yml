@@ -52,3 +52,14 @@ app:
     enabled: ${READ_CACHE_ENABLED:true}
     ttl-ms: ${READ_CACHE_TTL_MS:2000}
     max-response-bytes: 262144
+springdoc:
+  api-docs:
+    enabled: ${API_DOCS_ENABLED:true}
+  swagger-ui:
+    enabled: ${API_DOCS_ENABLED:true}
+    path: /swagger-ui.html
+    disable-swagger-default-url: true
+    operations-sorter: alpha
+    tags-sorter: alpha
+  override-with-generic-response: false
+  packages-to-scan: br.com.estoque.items.api,br.com.estoque.organizations.api,br.com.estoque.orders.api,br.com.estoque.imports.api

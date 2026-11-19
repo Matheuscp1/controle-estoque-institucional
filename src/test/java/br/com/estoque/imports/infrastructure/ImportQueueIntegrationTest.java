@@ -405,7 +405,7 @@ class ImportQueueIntegrationTest {
         assertThat(store.ready()).isFalse();
         mvc.perform(get("/api/itens")).andExpect(status().isOk())
                 .andExpect(header().string("X-Import-Ready","false"))
-                .andExpect(jsonPath("$[0].codigo").value("A"));
+                .andExpect(jsonPath("$.registros[0].codigo").value("A"));
         mvc.perform(post("/api/pedidos").contentType("application/json").content("{}"))
                 .andExpect(status().isServiceUnavailable());
     }

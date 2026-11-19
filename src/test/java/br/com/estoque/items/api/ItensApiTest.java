@@ -91,18 +91,33 @@ class ItensApiTest {
         service.cadastrar("C","Caneta","CX",BigDecimal.TEN);
         mvc.perform(get("/api/itens").param("descricao","PAPEL").param("unidade"," un ")
                 .param("saldoMin","1").param("saldoMax","10").param("limite","1"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].codigo").value("A"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.registros.length()").value(1))
+                .andExpect(jsonPath("$.registros[0].codigo").value("A"));
         mvc.perform(get("/api/itens?descricao=papel&depois=A&limite=1"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$[0].codigo").value("B"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.registros[0].codigo").value("B"));
+    }
+
+    @Test void totalRespeitaFiltrosMasIgnoraCursorELimite() throws Exception {
+        service.cadastrar("A","Papel branco","UN",BigDecimal.TEN);
+        service.cadastrar("B","Papel reciclado","UN",BigDecimal.ONE);
+        service.cadastrar("C","Caneta","CX",BigDecimal.TEN);
+        mvc.perform(get("/api/itens?descricao=PAPEL&unidade=UN&saldoMin=1&saldoMax=10&depois=A&limite=1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.registros.length()").value(1)).andExpect(jsonPath("$.registros[0].codigo").value("B"));
+        mvc.perform(get("/api/itens?descricao=papel&depois=Z&limite=1"))
+                .andExpect(jsonPath("$.total").value(2)).andExpect(jsonPath("$.registros").isEmpty());
+        mvc.perform(get("/api/itens?descricao=papel&saldoMin=5"))
+                .andExpect(jsonPath("$.total").value(1));
+        mvc.perform(get("/api/itens?descricao=inexistente"))
+                .andExpect(jsonPath("$.total").value(0)).andExpect(jsonPath("$.registros").isEmpty());
     }
 
     @Test void buscaTrataCuringasComoTextoLiteral() throws Exception {
         service.cadastrar("A","Álcool 70%_especial","UN",BigDecimal.ONE);
         service.cadastrar("B","Álcool comum","UN",BigDecimal.ONE);
         mvc.perform(get("/api/itens").param("descricao","%_"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].codigo").value("A"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.registros.length()").value(1))
+                .andExpect(jsonPath("$.registros[0].codigo").value("A"));
     }
 
     @Test void validaEntradasENaoExpoeDetalhesSql() throws Exception {

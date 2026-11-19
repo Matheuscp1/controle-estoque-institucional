@@ -28,7 +28,7 @@ O `docker compose up --build` inclui Redis. Para executar o backend pela IDE, po
 | `READ_CACHE_TTL_MS` | `2000` | Validade em milissegundos |
 | `LOG_DIRECTORY` | `./logs` | Diretório dos arquivos de log |
 
-O Compose expõe Redis somente em `127.0.0.1` para desenvolvimento. Instâncias que compartilham o cache devem usar o mesmo banco operacional e o mesmo Redis dedicado a esse ambiente. A chave usa o prefixo `estoque:{http-v1}:`. Não compartilhe esse Redis entre bases de ambientes diferentes.
+O Compose expõe Redis somente em `127.0.0.1` para desenvolvimento. Instâncias que compartilham o cache devem usar o mesmo banco operacional e o mesmo Redis dedicado a esse ambiente. A chave usa o prefixo `estoque:{http-v2}:`. Não compartilhe esse Redis entre bases de ambientes diferentes.
 
 ## Logs
 

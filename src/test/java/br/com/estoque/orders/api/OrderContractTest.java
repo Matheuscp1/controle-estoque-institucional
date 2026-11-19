@@ -150,17 +150,33 @@ public abstract class OrderContractTest {
         var first = service.create(request("P", line("A","1")));
         var second = service.create(request("Q", line("B","1")));
         service.create(new NewOrder("R", "X", "João", OrderSource.PORTAL, List.of(line("A","1"))));
-        var page = service.list(new OrderFilter("O", null, null, OrderStatus.CONFIRMADO, null, 1));
+        var page = service.list(new OrderFilter("O", null, null, OrderStatus.CONFIRMADO, null, 1)).registros();
         assertThat(page).extracting(Order::id).containsExactly(second.id());
         assertThat(page.get(0).request().items()).extracting(OrderLine::itemCode).containsExactly("B");
-        assertThat(service.list(new OrderFilter("O", null, null, null, second.id(), 1)))
+        assertThat(service.list(new OrderFilter("O", null, null, null, second.id(), 1)).registros())
                 .extracting(Order::id).containsExactly(first.id());
         service.cancel(first.id(), "Erro");
-        assertThat(service.list(new OrderFilter("O", null, null, OrderStatus.CANCELADO, null, 50)))
+        assertThat(service.list(new OrderFilter("O", null, null, OrderStatus.CANCELADO, null, 50)).registros())
                 .extracting(Order::id).containsExactly(first.id());
-        assertThat(service.list(new OrderFilter("O", first.createdAt(), first.createdAt().plusSeconds(1), null, null, 50)))
+        assertThat(service.list(new OrderFilter("O", first.createdAt(), first.createdAt().plusSeconds(1), null, null, 50)).registros())
                 .extracting(Order::id).contains(first.id());
-        assertThat(service.list(new OrderFilter("O", null, first.createdAt(), null, null, 50))).isEmpty();
+        assertThat(service.list(new OrderFilter("O", null, first.createdAt(), null, null, 50)).registros()).isEmpty();
+    }
+
+    @Test void totalDePedidosRespeitaOrgaoSituacaoPeriodoEIgnoraCursor() throws Exception {
+        var first=service.create(request("P",line("A","1"),line("B","1")));
+        var second=service.create(request("Q",line("A","1")));
+        service.create(new NewOrder("R","X","Maria",OrderSource.PORTAL,List.of(line("A","1"))));
+        mvc.perform(get("/api/orgaos/O/pedidos").param("antes",Long.toString(second.id())).param("limite","1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.registros.length()").value(1)).andExpect(jsonPath("$.registros[0].id").value(first.id()));
+        mvc.perform(get("/api/orgaos/O/pedidos").param("antes",Long.toString(first.id())))
+                .andExpect(jsonPath("$.total").value(2)).andExpect(jsonPath("$.registros").isEmpty());
+        service.cancel(first.id(),"Revisão");
+        mvc.perform(get("/api/orgaos/O/pedidos?situacao=CANCELADO"))
+                .andExpect(jsonPath("$.total").value(1));
+        mvc.perform(get("/api/orgaos/O/pedidos").param("fim",first.createdAt().toString()))
+                .andExpect(jsonPath("$.total").value(0)).andExpect(jsonPath("$.registros").isEmpty());
     }
 
     @Test void httpCriaConsultaCancelaEValidaEntradas() throws Exception {
@@ -176,7 +192,7 @@ public abstract class OrderContractTest {
         mvc.perform(post("/api/pedidos/" + id + "/cancelamento").contentType("application/json").content("{\"motivo\":\"Erro\"}"))
                 .andExpect(status().isConflict());
         mvc.perform(get("/api/orgaos/O/pedidos?situacao=CANCELADO")).andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(id));
+                .andExpect(jsonPath("$.registros[0].id").value(id));
         mvc.perform(get("/api/pedidos/99999999")).andExpect(status().isNotFound());
         mvc.perform(get("/api/orgaos/O/pedidos?limite=101")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/orgaos/O/pedidos?situacao=INVALIDA")).andExpect(status().isBadRequest());

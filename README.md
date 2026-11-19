@@ -10,6 +10,10 @@ Repositório: https://github.com/Matheuscp1/controle-estoque-institucional
 
 Cache de consultas compartilhado com Redis e logs de requisições/importação: veja [configuração e limites](docs/cache-logs.md).
 
+Documentação interativa da API: [Swagger UI](http://localhost:8080/swagger-ui.html). Consulte [o guia de uso](docs/swagger.md) para exemplos, upload do ZIP e revisão das ocorrências.
+
+As listagens `GET /api/itens` e `GET /api/orgaos/{codigo}/pedidos` retornam `{ "registros": [...], "total": 123 }`. No frontend, leia a página em `registros` e a quantidade correspondente aos filtros em `total`; o cursor e o limite não reduzem esse total. A lista de órgãos mantém o formato de array.
+
 - `pom.xml`: dependências e build Maven.
 - `src/main/java/br/com/estoque/Application.java`: entrada da aplicação.
 - `src/main/resources/application.yml`: configuração do banco e da API.

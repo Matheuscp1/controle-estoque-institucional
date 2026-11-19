@@ -4,7 +4,7 @@ import br.com.estoque.items.domain.*;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.util.List;
+import br.com.estoque.shared.application.PageResult;
 
 public class ItemService {
     private final ItemRepository repository;
@@ -23,7 +23,7 @@ public class ItemService {
         return repository.buscar(codigo).orElseThrow(() -> new ErroItem.NaoEncontrado(codigo));
     }
 
-    public List<Item> listar(FiltroItens filtro) { return repository.listar(filtro); }
+    public PageResult<Item> listar(FiltroItens filtro) { return repository.listar(filtro); }
 
     public Item editar(String codigo, String descricao, String unidade, BigDecimal saldo, boolean ativo, long versao) {
         return salvar(buscar(codigo).editar(descricao, unidade, saldo, ativo, versao), versao);

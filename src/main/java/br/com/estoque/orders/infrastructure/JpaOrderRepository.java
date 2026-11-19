@@ -6,6 +6,9 @@ import java.time.OffsetDateTime;
 import java.util.*;
 import javax.persistence.*;
 import javax.persistence.criteria.Predicate;
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.Root;
+import br.com.estoque.shared.application.PageResult;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
 
@@ -53,22 +56,30 @@ public class JpaOrderRepository implements OrderRepository {
         entityManager.find(OrderEntity.class, order.id()).cancel(order);
         entityManager.flush();
     }
-    @Override public List<Order> list(OrderFilter filter) {
+    @Override public PageResult<Order> list(OrderFilter filter) {
         var cb = entityManager.getCriteriaBuilder();
+        var count = cb.createQuery(Long.class);
+        var countedOrder = count.from(OrderEntity.class);
+        count.select(cb.count(countedOrder)).where(filters(cb,countedOrder,filter).toArray(Predicate[]::new));
+        long total = entityManager.createQuery(count).getSingleResult();
         var query = cb.createQuery(OrderEntity.class);
         var root = query.from(OrderEntity.class);
+        var predicates = filters(cb,root,filter);
+        if (filter.beforeId() != null) predicates.add(cb.lessThan(root.get("id"), filter.beforeId()));
+        query.where(predicates.toArray(Predicate[]::new)).orderBy(cb.desc(root.get("id")));
+        var page = entityManager.createQuery(query).setMaxResults(filter.limit()).getResultList();
+        if (page.isEmpty()) return new PageResult<>(List.of(),total);
+        // Busca as linhas de toda a página em uma consulta, sem paginar uma coleção em memória.
+        entityManager.createQuery("select distinct o from OrderEntity o join fetch o.items where o.id in :ids", OrderEntity.class)
+                .setParameter("ids", page.stream().map(OrderEntity::id).toList()).getResultList();
+        return new PageResult<>(page.stream().map(OrderEntity::toDomain).toList(),total);
+    }
+    private List<Predicate> filters(CriteriaBuilder cb,Root<OrderEntity> root,OrderFilter filter) {
         var predicates = new ArrayList<Predicate>();
         predicates.add(cb.equal(root.get("organizationCode"), filter.organizationCode()));
         if (filter.from() != null) predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), filter.from()));
         if (filter.to() != null) predicates.add(cb.lessThan(root.get("createdAt"), filter.to()));
         if (filter.status() != null) predicates.add(cb.equal(root.get("status"), filter.status()));
-        if (filter.beforeId() != null) predicates.add(cb.lessThan(root.get("id"), filter.beforeId()));
-        query.where(predicates.toArray(Predicate[]::new)).orderBy(cb.desc(root.get("id")));
-        var page = entityManager.createQuery(query).setMaxResults(filter.limit()).getResultList();
-        if (page.isEmpty()) return List.of();
-        // Busca as linhas de toda a página em uma consulta, sem paginar uma coleção em memória.
-        entityManager.createQuery("select distinct o from OrderEntity o join fetch o.items where o.id in :ids", OrderEntity.class)
-                .setParameter("ids", page.stream().map(OrderEntity::id).toList()).getResultList();
-        return page.stream().map(OrderEntity::toDomain).toList();
+        return predicates;
     }
 }

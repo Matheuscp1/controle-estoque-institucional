@@ -1,6 +1,7 @@
 package br.com.estoque.orders.application;
 
 import br.com.estoque.orders.domain.*;
+import br.com.estoque.shared.application.PageResult;
 import java.time.OffsetDateTime;
 import java.util.*;
 
@@ -12,5 +13,5 @@ public interface OrderRepository {
     Order insertHeader(NewOrder request, OffsetDateTime createdAt);
     void storeItems(Order order);
     void saveCancellation(Order order);
-    List<Order> list(OrderFilter filter);
+    PageResult<Order> list(OrderFilter filter);
 }

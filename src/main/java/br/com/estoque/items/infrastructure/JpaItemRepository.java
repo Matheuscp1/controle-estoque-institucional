@@ -6,6 +6,9 @@ import java.util.*;
 import javax.persistence.EntityManager;
 import javax.persistence.LockModeType;
 import javax.persistence.criteria.Predicate;
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.Root;
+import br.com.estoque.shared.application.PageResult;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Repository;
@@ -69,10 +72,23 @@ public class JpaItemRepository implements ItemRepository {
 
     @Override
     @Transactional(readOnly = true)
-    public List<Item> listar(FiltroItens filtro) {
+    public PageResult<Item> listar(FiltroItens filtro) {
         var cb = entityManager.getCriteriaBuilder();
+        var count = cb.createQuery(Long.class);
+        var countedItem = count.from(ItemEntity.class);
+        count.select(cb.count(countedItem)).where(filters(cb,countedItem,filtro).toArray(Predicate[]::new));
+        long total = entityManager.createQuery(count).getSingleResult();
         var query = cb.createQuery(ItemEntity.class);
         var item = query.from(ItemEntity.class);
+        var predicates = filters(cb,item,filtro);
+        if (filtro.depois() != null) predicates.add(cb.greaterThan(item.get("codigo"), filtro.depois()));
+        query.where(predicates.toArray(Predicate[]::new)).orderBy(cb.asc(item.get("codigo")));
+        var rows = entityManager.createQuery(query).setMaxResults(filtro.limite()).getResultList().stream()
+                .map(ItemEntity::toDomain).toList();
+        return new PageResult<>(rows,total);
+    }
+
+    private List<Predicate> filters(CriteriaBuilder cb,Root<ItemEntity> item,FiltroItens filtro) {
         List<Predicate> predicates = new ArrayList<>();
         if (filtro.descricao() != null) {
             String descricao = filtro.descricao().toLowerCase(Locale.ROOT)
@@ -82,10 +98,6 @@ public class JpaItemRepository implements ItemRepository {
         if (filtro.unidade() != null) predicates.add(cb.equal(item.get("unidade"), filtro.unidade()));
         if (filtro.saldoMin() != null) predicates.add(cb.greaterThanOrEqualTo(item.get("saldo"), filtro.saldoMin()));
         if (filtro.saldoMax() != null) predicates.add(cb.lessThanOrEqualTo(item.get("saldo"), filtro.saldoMax()));
-        if (filtro.depois() != null) predicates.add(cb.greaterThan(item.get("codigo"), filtro.depois()));
-        query.where(predicates.toArray(Predicate[]::new)).orderBy(cb.asc(item.get("codigo")));
-        // Consulta limitada sem COUNT(*) de toda a base em cada página.
-        return entityManager.createQuery(query).setMaxResults(filtro.limite()).getResultList().stream()
-                .map(ItemEntity::toDomain).toList();
+        return predicates;
     }
 }

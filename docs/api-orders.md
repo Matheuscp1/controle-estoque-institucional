@@ -45,7 +45,7 @@ Premissas:
 | `antes` | ID positivo do último pedido da página anterior. |
 | `limite` | De 1 a 100, padrão 50. |
 
-As datas são filtradas por criação do pedido. A paginação usa cursor, sem `OFFSET` nem contagem total. As linhas da página são carregadas em uma segunda consulta, evitando uma consulta por pedido e evitando paginação de coleções em memória. A listagem não representa um snapshot imutável entre páginas se houver operações simultâneas.
+As datas são filtradas por criação do pedido. A paginação usa cursor, sem `OFFSET`. A resposta contém `registros` (pedidos da página) e `total` (quantidade de pedidos do órgão que correspondem aos filtros de período e situação, ignorando `antes` e `limite`). O total conta pedidos, não suas linhas, e continua sendo retornado quando a página está vazia. As linhas da página são carregadas em uma consulta conjunta, evitando uma consulta por pedido e evitando paginação de coleções em memória. O total usa uma consulta `COUNT` adicional. A listagem não representa um snapshot imutável entre consultas ou páginas se houver operações simultâneas.
 
 ## Cancelar
 

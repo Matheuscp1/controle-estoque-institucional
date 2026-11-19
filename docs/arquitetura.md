@@ -28,7 +28,7 @@ flowchart LR
 
 O domínio não importa Spring, JPA ou classes da API. A aplicação recebe o repositório e o relógio por construtor. A infraestrutura conecta as implementações. A API usa DTOs próprios, sem expor entidades persistentes ou mapas genéricos.
 
-`ItemEntity` mapeia a tabela `itens` com `@Entity`, `@Table`, `@Id` e `@Version`. A entidade fica na infraestrutura, separada do `Item` imutável do domínio. Isso preserva as regras sem depender do ciclo de vida do Hibernate. `SpringDataItemRepository` estende `JpaRepository`; `JpaItemRepository` implementa a interface da aplicação e converte entre entidade e domínio. Os filtros usam Criteria API, com limite e cursor, sem contagem total a cada página.
+`ItemEntity` mapeia a tabela `itens` com `@Entity`, `@Table`, `@Id` e `@Version`. A entidade fica na infraestrutura, separada do `Item` imutável do domínio. Isso preserva as regras sem depender do ciclo de vida do Hibernate. `SpringDataItemRepository` estende `JpaRepository`; `JpaItemRepository` implementa a interface da aplicação e converte entre entidade e domínio. Os filtros usam Criteria API, com limite e cursor. As listagens de itens e pedidos incluem uma consulta COUNT com os mesmos filtros da busca, sem o cursor, para retornar o total junto com os registros da página. Apenas a página é carregada como entidades; a contagem tem custo adicional proporcional à busca no banco.
 
 O Flyway continua sendo a fonte da estrutura do banco. `ddl-auto: validate` faz o Hibernate validar o mapeamento, sem criar ou alterar tabelas. `open-in-view: false` fecha a persistência antes da renderização HTTP. Com Spring Boot 2.7, as anotações são de `javax.persistence`.
 
