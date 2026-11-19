@@ -1,4 +1,7 @@
 import { parse, stringify } from 'lossless-json'
+import Vue from 'vue'
+
+export const importReadiness = Vue.observable({ ready: null as boolean | null })
 
 export interface Item {
   codigo: string
@@ -64,6 +67,8 @@ export async function request<T>(path: string, { method = 'GET', params, body, s
     headers: body ? { 'Content-Type': 'application/json', Accept: 'application/json' } : { Accept: 'application/json' },
     body: body ? stringify(body) : undefined,
   })
+  const readyHeader = response.headers.get('X-Import-Ready')
+  if (readyHeader === 'true' || readyHeader === 'false') importReadiness.ready = readyHeader === 'true'
   const isJson = (response.headers.get('content-type') || '').includes('json')
   let data: T | ErrorResponse | null = null
   if (isJson) {

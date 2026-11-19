@@ -88,6 +88,8 @@
                     <v-btn
                       v-if="order.situacao === 'CONFIRMADO'"
                       small text color="error"
+                      :disabled="importReadiness.ready === false"
+                      :title="importReadiness.ready === false ? 'Cancelamento disponível após a validação da carga' : ''"
                       :aria-label="'Cancelar pedido ' + order.idExterno"
                       @click="cancelling = order"
                     >
@@ -150,7 +152,7 @@
 import Vue from 'vue'
 import CursorList from '../../components/CursorList.vue'
 import CancelOrderDialog from './components/CancelOrderDialog.vue'
-import { errorMessage, request, type Order, type Organization, type PageResult } from '../../services/api'
+import { errorMessage, importReadiness, request, type Order, type Organization, type PageResult } from '../../services/api'
 import { formatDecimal } from '../../utils/decimal'
 
 const emptyFilters = () => ({ codigo: null, firstDay: '', lastDay: '', situacao: '' })
@@ -174,6 +176,7 @@ export default Vue.extend({
     expandedId: null,
     cancelling: null,
     cancelled: false,
+    importReadiness,
   }),
   created() {
     this.loadOrganizations()

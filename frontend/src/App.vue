@@ -18,6 +18,7 @@
     </header>
     <v-main>
       <main class="workspace">
+        <ImportStatusPanel v-if="importReadiness.ready === false" />
         <ItemsView v-if="section === 'itens'" />
         <OrdersView v-else />
       </main>
@@ -29,14 +30,16 @@
 import Vue from 'vue'
 import ItemsView from './views/items/ItemsView.vue'
 import OrdersView from './views/orders/OrdersView.vue'
+import ImportStatusPanel from './components/ImportStatusPanel.vue'
+import { importReadiness } from './services/api'
 
 function currentSection() {
   return window.location.hash === '#pedidos' ? 'pedidos' : 'itens'
 }
 
 export default Vue.extend({
-  components: { ItemsView, OrdersView },
-  data: () => ({ section: currentSection() }),
+  components: { ItemsView, OrdersView, ImportStatusPanel },
+  data: () => ({ section: currentSection(), importReadiness }),
   mounted() {
     window.addEventListener('hashchange', this.updateSection)
   },

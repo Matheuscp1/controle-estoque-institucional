@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LosslessNumber } from 'lossless-json'
-import { ApiError, request } from './api'
+import { ApiError, importReadiness, request } from './api'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  importReadiness.ready = null
+})
 
 describe('cliente da API', () => {
   it('codifica filtros, ignora vazios e envia o sinal de cancelamento', async () => {
@@ -41,5 +44,17 @@ describe('cliente da API', () => {
   it('trata resposta sem JSON e indisponibilidade temporária', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
     await expect(request('/itens')).rejects.toMatchObject({ status: 503 })
+  })
+
+  it('atualiza a disponibilidade de escrita pelo cabeçalho da API', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('[]', { headers: { 'Content-Type': 'application/json', 'X-Import-Ready': 'false' } }))
+      .mockResolvedValueOnce(new Response('[]', { headers: { 'Content-Type': 'application/json', 'X-Import-Ready': 'true' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await request('/itens')
+    expect(importReadiness.ready).toBe(false)
+    await request('/itens')
+    expect(importReadiness.ready).toBe(true)
   })
 })

@@ -56,6 +56,8 @@
                 <td class="text-right">
                   <v-btn
                     small text color="primary"
+                    :disabled="importReadiness.ready === false"
+                    :title="importReadiness.ready === false ? 'Edição disponível após a validação da carga' : ''"
                     :aria-label="'Editar item ' + item.codigo"
                     @click="editing = item"
                   >
@@ -82,14 +84,14 @@
 import Vue from 'vue'
 import CursorList from '../../components/CursorList.vue'
 import EditItemDialog from './components/EditItemDialog.vue'
-import { request, type Item, type PageResult } from '../../services/api'
+import { importReadiness, request, type Item, type PageResult } from '../../services/api'
 import { decimalInput, decimalMilliunits, formatDecimal } from '../../utils/decimal'
 
 const emptyFilters = () => ({ descricao: '', unidade: '', saldoMin: '', saldoMax: '' })
 
 export default Vue.extend({
   components: { CursorList, EditItemDialog },
-  data: () => ({ draft: emptyFilters(), filters: {}, filterError: '', editing: null, saved: false }),
+  data: () => ({ draft: emptyFilters(), filters: {}, filterError: '', editing: null, saved: false, importReadiness }),
   methods: {
     formatDecimal,
     fetchItems(filters, depois, limite, signal) {
