@@ -1,6 +1,6 @@
 # controle-estoque-institucional
 
-Backend de itens, órgãos e pedidos transacionais em Java 17 e Spring Boot 2.7.18.
+Sistema de controle de estoque com backend em Java 17/Spring Boot 2.7.18 e frontend em Vue 2/Vuetify 2.
 
 Projeto Maven: `br.com.estoque:controle-estoque-institucional`.
 Pacote Java: `br.com.estoque`.
@@ -17,17 +17,17 @@ As listagens `GET /api/itens` e `GET /api/orgaos/{codigo}/pedidos` retornam `{ "
 - `pom.xml`: dependências e build Maven.
 - `src/main/java/br/com/estoque/Application.java`: entrada da aplicação.
 - `src/main/resources/application.yml`: configuração do banco e da API.
-- `Dockerfile` e `compose.yaml`: backend, PostgreSQL 15, RabbitMQ e Redis. Este Compose não inclui o frontend.
+- `Dockerfile`, `frontend/Dockerfile` e `compose.yaml`: backend, frontend, PostgreSQL 15, RabbitMQ e Redis.
 
 ## Executar
 
-Execute os comandos na raiz do backend, com Docker Engine/Desktop e Docker Compose v2 disponíveis. Para executar pela IDE ou Maven, também são necessários JDK 17 ou superior e Maven 3.9. O build Docker fornece seu próprio JDK e Maven.
+Execute os comandos na raiz do projeto, com Docker Engine/Desktop e Docker Compose v2 disponíveis. Para executar pela IDE ou Maven, também são necessários JDK 17 ou superior e Maven 3.9. O build Docker fornece seu próprio JDK e Maven.
 
 ```sh
 docker compose up --build
 ```
 
-A aplicação usa a porta `8080`. O Flyway aplica as migrações automaticamente; estão disponíveis os endpoints de itens, órgãos e pedidos.
+Abra o frontend em `http://localhost:8081`. O Nginx encaminha `/api` para o backend pela rede do Compose; a API e o Swagger também ficam disponíveis em `http://localhost:8080`. O Flyway aplica as migrações automaticamente.
 No Compose, a importação inicial está habilitada: consultas mostram os dados inseridos progressivamente, enquanto alterações retornam `503` até a primeira validação. Envie o ZIP pelo endpoint de importação seguindo [o guia de carga histórica](docs/importacao.md).
 O banco usa volume persistente. A senha padrão é apenas para desenvolvimento; configure `DB_PASSWORD` em `.env` para alterá-la.
 
@@ -270,7 +270,7 @@ A carga usa Java, leitura em fluxo, lotes de 500 registros e gravações JPA em 
 
 ## Limitações e o que faria com mais tempo
 
-O foco desta entrega foi garantir consistência dos pedidos e permitir importar e revisar o histórico. Este diretório e seu Compose cobrem o backend; não demonstram a execução integrada do frontend.
+O foco desta entrega foi garantir consistência dos pedidos e permitir importar e revisar o histórico. O Compose reúne backend e frontend, mas ainda falta medir a experiência integrada sob carga real de usuários.
 
 Com mais tempo, as prioridades seriam:
 
@@ -304,7 +304,7 @@ Interface em Vue 2 e Vuetify 2 para o desafio de controle de saldo de itens e pe
 
 ## Executar
 
-O back-end precisa estar disponível em `http://localhost:8080`. O código da API está na branch `back-end` deste repositório.
+No desenvolvimento local, o backend precisa estar disponível em `http://localhost:8080`. Seu código está na pasta `src` deste repositório.
 
 Com Node.js 22:
 
@@ -316,13 +316,13 @@ npm run dev
 
 O Vite mostra a URL local. Para usar outra API, configure `API_TARGET` antes de iniciar o servidor.
 
-Com Docker:
+Com Docker, execute na raiz do repositório:
 
 ```sh
 docker compose up --build
 ```
 
-A interface fica em `http://localhost:8081`. O Nginx encaminha `/api` ao back-end na porta `8080` do host. Para outro endereço acessível ao contêiner, configure `API_UPSTREAM` no serviço `frontend` do Compose.
+A interface fica em `http://localhost:8081`. O Nginx encaminha `/api` para `backend:8080` na rede interna. Para outro endereço acessível ao contêiner, configure `API_UPSTREAM` no serviço `frontend` do Compose.
 
 ## Testes e TDD
 
