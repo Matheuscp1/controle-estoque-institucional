@@ -2,7 +2,9 @@
   <section class="panel results" :aria-busy="loading ? 'true' : 'false'">
     <div class="results-title">
       <h2>{{ title }}</h2>
-      <span v-if="rows.length">{{ rows.length }} nesta página</span>
+      <span v-if="total !== null" aria-live="polite">
+        {{ totalLabel }}: {{ formattedTotal }} · {{ rows.length }} nesta página
+      </span>
     </div>
     <v-progress-linear v-if="loading" indeterminate color="primary" aria-label="Carregando resultados" />
     <v-alert v-if="error" class="results-message" type="error" text role="alert">
@@ -31,6 +33,7 @@ export default Vue.extend({
   props: {
     title: { type: String, required: true },
     emptyMessage: { type: String, required: true },
+    totalLabel: { type: String, required: true },
     filters: { type: Object, required: true },
     fetchPage: { type: Function, required: true },
     cursorKey: { type: String, required: true },
@@ -38,6 +41,7 @@ export default Vue.extend({
   },
   data: () => ({
     rows: [],
+    total: null as string | null,
     cursors: [null],
     page: 0,
     canAdvance: false,
@@ -46,9 +50,15 @@ export default Vue.extend({
     retryPage: 0,
     pending: null,
   }),
+  computed: {
+    formattedTotal() {
+      return this.total === null ? '' : BigInt(this.total).toLocaleString('pt-BR')
+    },
+  },
   watch: {
     filters() {
       this.rows = []
+      this.total = null
       this.cursors = [null]
       this.page = 0
       this.canAdvance = false
@@ -82,8 +92,10 @@ export default Vue.extend({
       this.loading = true
 
       try {
-        const rows = await this.fetchPage(this.filters, this.cursors[page], this.limit, pending.signal)
+        const result = await this.fetchPage(this.filters, this.cursors[page], this.limit, pending.signal)
         if (this.pending !== pending) return
+        const { registros: rows, total } = result
+        this.total = total
         if (!rows.length && page > this.page) {
           this.canAdvance = false
           return

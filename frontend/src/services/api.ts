@@ -26,6 +26,11 @@ export interface Order {
   itens: Array<{ codigoItem: string; quantidade: string }>
 }
 
+export interface PageResult<T> {
+  registros: T[]
+  total: string
+}
+
 interface RequestOptions {
   method?: string
   params?: Record<string, string | number | null | undefined>

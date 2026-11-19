@@ -47,6 +47,7 @@
       ref="results"
       title="Pedidos encontrados"
       empty-message="Nenhum pedido encontrado para este órgão com os filtros informados."
+      total-label="Total de pedidos"
       :filters="filters"
       :fetch-page="fetchOrders"
       cursor-key="id"
@@ -149,7 +150,7 @@
 import Vue from 'vue'
 import CursorList from '../../components/CursorList.vue'
 import CancelOrderDialog from './components/CancelOrderDialog.vue'
-import { errorMessage, request, type Order, type Organization } from '../../services/api'
+import { errorMessage, request, type Order, type Organization, type PageResult } from '../../services/api'
 import { formatDecimal } from '../../utils/decimal'
 
 const emptyFilters = () => ({ codigo: null, firstDay: '', lastDay: '', situacao: '' })
@@ -212,7 +213,7 @@ export default Vue.extend({
       }
     },
     fetchOrders({ codigo, ...filters }, antes, limite, signal) {
-      return request<Order[]>(`/orgaos/${encodeURIComponent(codigo)}/pedidos`, {
+      return request<PageResult<Order>>(`/orgaos/${encodeURIComponent(codigo)}/pedidos`, {
         params: { ...filters, antes, limite },
         signal,
       })

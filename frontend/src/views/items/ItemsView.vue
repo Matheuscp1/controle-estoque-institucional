@@ -24,6 +24,7 @@
       ref="results"
       title="Itens do catálogo"
       empty-message="Nenhum item encontrado com os filtros informados."
+      total-label="Total de itens"
       :filters="filters"
       :fetch-page="fetchItems"
       cursor-key="codigo"
@@ -81,7 +82,7 @@
 import Vue from 'vue'
 import CursorList from '../../components/CursorList.vue'
 import EditItemDialog from './components/EditItemDialog.vue'
-import { request, type Item } from '../../services/api'
+import { request, type Item, type PageResult } from '../../services/api'
 import { decimalInput, decimalMilliunits, formatDecimal } from '../../utils/decimal'
 
 const emptyFilters = () => ({ descricao: '', unidade: '', saldoMin: '', saldoMax: '' })
@@ -92,7 +93,7 @@ export default Vue.extend({
   methods: {
     formatDecimal,
     fetchItems(filters, depois, limite, signal) {
-      return request<Item[]>('/itens', { params: { ...filters, depois, limite }, signal })
+      return request<PageResult<Item>>('/itens', { params: { ...filters, depois, limite }, signal })
     },
     applyFilters() {
       this.filterError = ''

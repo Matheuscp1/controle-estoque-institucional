@@ -36,9 +36,9 @@ Os testes cobrem valores decimais, contrato HTTP, paginação com cancelamento d
 
 ## Funcionalidades
 
-- Consulta de itens por descrição, unidade e faixa de saldo, com paginação por cursor.
+- Consulta de itens por descrição, unidade e faixa de saldo, com paginação por cursor e total correspondente aos filtros.
 - Edição de descrição, unidade, saldo e situação, com controle de versão. Um conflito exige recarregar e revisar os dados.
-- Consulta de pedidos de um órgão por período e situação, com itens e quantidades.
+- Consulta de pedidos de um órgão por período e situação, com itens, quantidades e total de pedidos correspondente aos filtros.
 - Cancelamento de pedido confirmado com motivo e atualização da lista.
 
 As datas de filtro abrangem os dias selecionados no fuso do navegador. O cliente conserva a precisão decimal dos saldos permitidos pela API. A tela informa erros, listas vazias e o bloqueio HTTP 503 da carga inicial.
