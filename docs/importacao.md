@@ -2,16 +2,18 @@
 
 A entrada é o ZIP original com `orgaos.csv`, `itens.csv`, `pedidos.csv` e `pedido_itens.csv` na raiz. O arquivo local de referência está em `massa-dados/massa-dados-candidato.zip`. Não é necessário descompactá-lo.
 
+A carga começa com `POST /api/imports`, não ao iniciar a aplicação. O backend lê o arquivo em fluxo, distribui lotes pelo RabbitMQ e publica os registros progressivamente. A primeira validação libera as operações sobre dados consistentes; ocorrências restantes podem ser corrigidas depois. Este guia descreve o backend implementado, não pressupõe que o painel do frontend já consuma essas rotas.
+
 ## Executar
 
-Com Docker em execução, `docker compose up --build` inicia PostgreSQL, RabbitMQ e a API. O Compose habilita `IMPORTS_ENABLED=true` e utiliza um volume persistente para os arquivos recebidos. A carga inicial exige tabelas operacionais vazias. Não apague um volume existente para importar novamente: use um ambiente separado caso já existam dados de uso.
+Na raiz do backend, com Docker e Compose disponíveis, `docker compose up --build` inicia PostgreSQL, RabbitMQ, Redis e a API. O Compose habilita `IMPORTS_ENABLED=true` e utiliza um volume persistente para os arquivos recebidos. A carga inicial exige tabelas operacionais vazias. Não apague um volume existente para importar novamente: use um ambiente separado caso já existam dados de uso.
 
 Se a API estiver sendo executada pela IDE, use `IMPORTS_ENABLED=true` e reinicie a aplicação. A configuração atual habilita a importação por padrão; `IMPORTS_ENABLED=false` desliga o módulo e remove a rota `/api/imports`, que passa a retornar `404`.
 
 Para executar a API localmente pelo Maven, use:
 
 ```powershell
-docker compose up -d db rabbitmq
+docker compose up -d db rabbitmq redis
 $env:IMPORTS_ENABLED = "true"
 mvn spring-boot:run
 ```
@@ -30,10 +32,19 @@ A resposta `202` contém `id`, o SHA-256 do arquivo. Consulte:
 GET /api/imports/{id}
 GET /api/imports/active
 GET /api/imports/{id}/issues?after=0&limit=100
-POST /api/imports/{id}/retry
 ```
 
-O relatório usa cursor: envie como `after` o último `id` retornado. Cada ocorrência informa arquivo, linha lógica quando identificável (cabeçalho contado como linha 1), chave, motivo e conteúdo original. Erros do arquivo inteiro, como ausência de registros, não têm uma linha específica.
+O relatório de ocorrências usa cursor: envie como `after` o último `id` de ocorrência retornado, não o ID da carga. Cada ocorrência informa arquivo, linha lógica quando identificável (cabeçalho contado como linha 1), chave, motivo e conteúdo original. Erros do arquivo inteiro, como ausência de registros, não têm uma linha específica.
+
+### Enviar pelo Swagger
+
+1. Abra [Swagger UI](http://localhost:8080/swagger-ui.html), localize **Importação** e expanda `POST /api/imports`.
+2. Clique em **Try it out** e, no campo **file**, em **Choose File / Escolher arquivo**. Selecione o ZIP original, de até 128 MiB.
+3. Clique em **Execute** e confira o código `202` em **Server response**. Copie o `id` do **Response body**; o recebimento não significa que a carga terminou.
+4. Abra `GET /api/imports/active` e execute, sem parâmetros. Também pode consultar `GET /api/imports/{id}`, preenchendo o ID copiado, sem aspas.
+5. Repita **Execute** para atualizar o progresso. O Swagger não faz atualização automática. Aguarde `COMPLETED` ou `COMPLETED_WITH_ISSUES`; neste último caso, siga a seção de revisão abaixo.
+
+O [guia do Swagger](swagger.md) e o [README](../README.md#consultar-e-corrigir-inconsistências) trazem o passo a passo de correção e um exemplo completo de JSON.
 
 ### Descoberta automática pelo frontend
 
@@ -46,13 +57,15 @@ Ao abrir o painel, consulte `GET /api/imports/active`. A rota usa a carga refere
 
 Essa rota apenas consulta: não inicia nem retoma importações, não libera edição e não calcula tempo restante. As proteções de escrita continuam no backend. Com `imports.enabled=false`, as rotas de importação não existem (`404`), o que é diferente do `204` de uma instalação habilitada sem carga.
 
+## Estados e liberação das operações
+
 | Estado | Significado |
 | --- | --- |
 | `PREPARING` | O ZIP está sendo lido em fluxo e os lotes estão sendo registrados. |
-| `STAGING` | A leitura terminou; os consumidores e as inserções incrementais podem continuar. |
+| `STAGING` | A leitura terminou; consumo, manifesto, publicação ou validação inicial ainda podem estar em andamento. Não há um status separado para cada uma dessas etapas. |
 | `NEEDS_REVIEW` | Estado da versão anterior, convertido após revalidação para o novo fluxo. |
 | `COMPLETED_WITH_ISSUES` | Processamento concluído; ocorrências disponíveis para tratamento e somente os dados afetados ficam protegidos. |
-| `REVIEW_PENDING` | Correções aguardam revalidação assíncrona; os dados já liberados continuam utilizáveis. |
+| `REVIEW_PENDING` | Correções aguardam ou passam por revalidação assíncrona; dados já liberados continuam utilizáveis e novas correções aguardam o término. |
 | `COMPLETED` | A reconciliação terminou e o acesso operacional foi liberado. |
 | `FAILED` | Falha técnica ou de formato requer intervenção e eventual retomada. |
 
@@ -72,13 +85,15 @@ Depois da validação inicial, `X-Import-Ready: true` indica que o bloqueio glob
 4. A publicação reúne até oito lotes consumidos por transação. Pedidos candidatos são deduplicados entre os lotes; identificadores já publicados são descartados antes de consultar novamente cabeçalhos e linhas. Cabeçalhos, linhas, contadores e marcadores são gravados juntos. Uma falha desfaz todo o grupo; grupos anteriores permanecem. Os locks dos lotes seguem uma ordem estável, e a restrição única do pedido continua protegendo contra publicações concorrentes.
 5. A conferência global reconcilia o saldo final e o histórico. A carga termina em `COMPLETED` ou `COMPLETED_WITH_ISSUES`. As pendências geram restrições específicas para impedir movimentações inconsistentes, permitindo operar os demais dados.
 
-`GET /api/imports/{id}` inclui `preparedBatches`, `completedBatches`, `publishedOrganizations`, `publishedItems`, `publishedOrders` e `publishedOrderLines`. Os quatro últimos contadores representam inserts provisórios concluídos. Durante `PREPARING`, `totalBatches` ainda pode ser zero porque o leitor não conhece o total final.
+`GET /api/imports/{id}` e `/active` incluem `preparedBatches`, `completedBatches`, `publishedOrganizations`, `publishedItems`, `publishedOrders` e `publishedOrderLines`. Durante a carga, os quatro últimos contadores mostram registros já publicados, ainda sujeitos à validação. Eles não representam a quantidade de registros liberados da quarentena. Durante `PREPARING`, `totalBatches` ainda pode ser zero porque o leitor não conhece o total final.
+
+Quando `totalBatches > 0`, `completedBatches / totalBatches` indica o progresso do consumo dos lotes, não da carga inteira. Mesmo em 100%, publicação e validação podem continuar. O endpoint não retorna tempo restante estimado nem data de início; o frontend não deve apresentar os contadores como uma previsão de conclusão.
 
 ## Processamento e concorrência
 
 A publicação agrupada reduz transações e verificações repetidas, sem aumentar o lote de leitura do ZIP nem remover validações. O manifesto continua exigindo todas as linhas de cada pedido. O ganho de tempo da alteração ainda precisa ser medido com a massa completa em ambiente separado; os testes de integração verificam rollback, reentrega e grupos concorrentes sobrepostos.
 
-Na execução local de 19/11/2026, **anterior à publicação agrupada**, o upload respondeu em 7,69 segundos. Do registro da carga (11:16:15) à conclusão (12:18:33), decorreram aproximadamente 1h02min19s. Foram publicados 250 órgãos, 50.000 itens, 997.149 pedidos e 2.319.169 linhas, com 9.843 ocorrências e status `COMPLETED_WITH_ISSUES`. Essa medição inclui processamento e validação final, não apenas o envio do ZIP, e não representa uma previsão para outros ambientes.
+O [resultado da execução completa](#resultado-da-massa-original) registra a referência anterior à publicação agrupada. Ele distingue o tempo de recebimento do ZIP do processamento até a validação final.
 
 O leitor mantém até 500 registros por lote. O conteúdo e a identificação determinística do lote são registrados no PostgreSQL antes da publicação. RabbitMQ recebe somente o ID do lote; as mensagens e filas são duráveis. O publicador exige confirmação do broker e republica lotes pendentes após expirar sua reserva.
 
@@ -151,6 +166,25 @@ A revisão registra correções justificadas e revalida referências e saldos. O
 
 As ocorrências podem ser corrigidas pelos endpoints de linhas e aproveitadas após `POST /api/imports/{id}/reprocess`. O reprocessamento usa a preparação persistida, sem reler o ZIP e sem repetir os lotes RabbitMQ. Alterações nos registros já liberados são recusadas para preservar a operação online. Consulte os contratos e limites no [guia de revisão](revisao-importacao.md).
 
+### Rotas para revisão
+
+Após `COMPLETED_WITH_ISSUES`, use o ID descoberto por `/active` nas rotas abaixo. O fluxo normal é consultar a ocorrência, conferir as linhas na origem, salvar as correções e solicitar a revalidação.
+
+| Operação | Rota e parâmetros |
+| --- | --- |
+| Listar ocorrências atuais | `GET /api/imports/{id}/issues?after=0&limit=100&history=false`. `history=true` inclui validações anteriores; uma ocorrência antiga inativa não prova que o problema foi resolvido. |
+| Conferir linhas e revisões | `GET /api/imports/{id}/rows?source=itens.csv&key=A&after=0&limit=100`. Substitua arquivo e chave pelos dados da ocorrência. |
+| Corrigir uma linha | `PUT /api/imports/{id}/rows/{source}/{line}`, com todos os campos CSV em `fields`, a `revision` atual e `justification`. Retorna `200` com a nova revisão. |
+| Adicionar registro ausente | `POST /api/imports/{id}/rows/{source}`, com campos completos, revisão zero e justificativa. Retorna `201`; limitado aos dados em revisão. |
+| Desconsiderar cópia idêntica | `POST /api/imports/{id}/rows/{source}/{line}/exclude-duplicate`, com revisão atual e justificativa. Retorna `204`, preservando outra cópia válida e a auditoria. |
+| Revalidar as correções | `POST /api/imports/{id}/reprocess`, sem corpo. Retorna `202`; acompanhe `REVIEW_PENDING` por `GET /api/imports/{id}` ou `/active`. |
+| Conferir registros protegidos | `GET /api/imports/{id}/quarantine?type=ITEM&limit=100`. Tipos: `ITEM`, `ORDER` e `ORGANIZATION`. |
+| Consultar auditoria | `GET /api/imports/{id}/corrections?after=0&limit=100`. |
+
+Para paginar, `issues` e `corrections` usam o último `id` retornado; `rows` usa a última `line`; `quarantine` usa a última `key`, com `after` vazio na primeira página. Nas consultas, campos como `original` e `fields` são JSON serializado em texto; na correção, envie `fields` como objeto JSON com valores textuais. Não altere o identificador do registro. Se houver conflito de revisão (`409`), releia os dados antes de corrigir novamente.
+
+Salvar uma correção não remove a ocorrência imediatamente. Aguarde a revalidação e consulte `/issues` e `/quarantine` novamente. Não há descarte genérico de registros nem operação para marcar uma ocorrência como resolvida sem validar os dados. Falhas técnicas da carga usam `/retry`; inconsistências corrigidas usam `/reprocess`. São fluxos diferentes.
+
 ## Testes
 
 ```powershell
@@ -171,28 +205,35 @@ RabbitMQ permite desacoplar preparação e consumo, controlar concorrência e re
 
 ### Validação do fluxo incremental
 
-Os testes pequenos cobrem inserts do catálogo antes do fim da carga, pedidos com linhas distribuídas entre lotes, reentregas concorrentes, rollback das linhas e dos marcadores, retomada de cargas antigas e substituição restrita a registros provisórios.
+Os testes pequenos cobrem inserts do catálogo antes do fim da carga, pedidos com linhas distribuídas entre lotes, reentregas concorrentes, publicação de grupos sobrepostos, rollback de pedidos/linhas/contadores/marcadores, retomada de cargas antigas e substituição restrita a registros provisórios. Também verificam a descoberta da carga atual por `/active`, incluindo ausência, conclusão e substituição. Os testes de Swagger verificam o contrato e suas referências.
 
-A execução da massa completa em 18/11/2026 foi interrompida quando o disco C: ficou com aproximadamente 58 MB livres. Antes da interrupção, o progresso registrou 50.000 itens inseridos enquanto a preparação e o consumo continuavam. A nova execução de 19/11/2026 foi concluída e está descrita em “Processamento e concorrência”, acima. Ainda falta comparar a publicação agrupada com essa referência. Os números da seção seguinte pertencem à versão anterior ao fluxo incremental.
+A suíte pequena não executa a massa completa por padrão. A execução concluída abaixo valida uma versão anterior à publicação agrupada; os testes de concorrência e rollback da nova versão não substituem uma nova medição completa de desempenho.
 
 ## Resultado da massa original
 
-Os números abaixo são a referência da implementação anterior, que aguardava toda a preparação e a validação antes dos inserts. Não representam uma medição do fluxo incremental.
+A execução local mais recente concluída ocorreu em **19/11/2026**, com o fluxo incremental e antes da otimização que agrupa até oito lotes na publicação. Os horários abaixo usam `America/Sao_Paulo`.
 
-Execução local de 17/11/2026, com PostgreSQL 15.20, RabbitMQ 4, dois consumidores e Java 22.0.2 compilando para Java 17. Os resultados detalhados e o hash do ZIP estão em [resultado-importacao.json](resultado-importacao.json).
-
-| Medida | Resultado |
+| Medida | Resultado observado |
 | --- | --- |
-| Registros preservados na preparação | 3.382.295 |
+| Registros de entrada | 3.382.295 |
 | Lotes concluídos | 6.766 |
-| Recebimento e preparação | 177,43 s |
-| Publicação pela fila e consumo dos lotes | 334,88 s |
-| Validação global | 174,51 s |
-| Total dessas etapas | Aproximadamente 11 min 27 s |
-| Pico de memória residente do processo Java de teste | Aproximadamente 476 MiB |
-| Ocorrências de inconsistência | 53.856 |
-| Resultado | `NEEDS_REVIEW`, nenhuma publicação operacional |
+| Resposta ao upload do ZIP | 7,69 s |
+| Registro da carga | 11:16:15 |
+| Conclusão da carga | 12:18:33 |
+| Tempo do registro à conclusão, incluindo validação | Aproximadamente 1h02min19s |
+| Órgãos publicados | 250 |
+| Itens publicados | 50.000 |
+| Pedidos publicados | 997.149 |
+| Linhas de pedidos publicadas | 2.319.169 |
+| Ocorrências ativas ao concluir | 9.843 |
+| Resultado | `COMPLETED_WITH_ISSUES` |
 
-As ocorrências incluem 4.513 pares pedido/item repetidos, 2.824 divergências de saldo final, 1.221 itens com saldo negativo na reconstrução histórica e referências a pedidos inválidos ou inexistentes. Um mesmo pedido pode gerar várias ocorrências: **53.856 não é a quantidade de pedidos rejeitados**. Os totais também diferem da auditoria bruta porque a validação de campos torna inválidos cabeçalhos que são referenciados por outras linhas.
+As 9.843 ocorrências não equivalem a 9.843 pedidos rejeitados: um registro pode ter mais de uma inconsistência, e há ocorrências de itens e referências. Os contadores de publicação também não indicam que todos esses registros estão liberados para movimentação; consulte a quarentena.
 
-O teste separou preparação, consumo e validação para medir cada etapa. A aplicação permite preparar e consumir simultaneamente. A memória medida inclui JVM e infraestrutura de teste, mas exclui PostgreSQL e RabbitMQ. É uma execução local, sem comparação controlada com carga síncrona e sem extrapolação para produção.
+Essa é uma referência local, não um prazo garantido. Ainda faltam a medição completa da publicação agrupada e um benchmark das consultas com a base carregada. Não foi comprovado ganho proporcional ao tamanho do grupo ou ao número de consumidores. A versão atual mantém as verificações de completude, duplicidade e concorrência.
+
+### Referências históricas
+
+O arquivo [resultado-importacao.json](resultado-importacao.json) registra a execução de **17/11/2026**, anterior ao fluxo incremental: aproximadamente 11min27s, 53.856 ocorrências e término em `NEEDS_REVIEW`, **sem publicação operacional**. Esse resultado não mede o mesmo trabalho da execução acima e não deve ser apresentado como o tempo atual da carga. O pico de memória registrado ali também pertence àquela execução, não à versão atual.
+
+Em 18/11/2026, uma tentativa incremental foi interrompida por falta de espaço em disco. Ela não fornece um tempo total comparável. Esses registros são preservados como histórico de desenvolvimento; a referência concluída é a execução de 19/11/2026 descrita acima.
