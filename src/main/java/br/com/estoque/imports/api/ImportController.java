@@ -5,6 +5,8 @@ import java.io.IOException;
 import java.util.*;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -24,6 +26,15 @@ public class ImportController {
     }
     @io.swagger.v3.oas.annotations.Operation(summary="Acompanhar importação",description="Estados: PREPARING, STAGING, COMPLETED, COMPLETED_WITH_ISSUES, REVIEW_PENDING, FAILED e NEEDS_REVIEW (legado). Contadores mostram lotes processados e registros publicados. COMPLETED_WITH_ISSUES conclui a carga e libera os registros consistentes; revise as ocorrências restantes.")
     @GetMapping("/{id}") public ImportJobEntity.View status(@PathVariable String id) {return store.status(id);}
+
+    @GetMapping("/active")
+    @io.swagger.v3.oas.annotations.Operation(summary="Descobrir a carga atual",description="Retorna o mesmo status e contadores de GET /api/imports/{id}, sem precisar informar o ID. A carga atual permanece consultável após conclusão ou falha; use status para identificar processamento em andamento. Retorna 204 sem corpo quando nenhuma carga foi registrada.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode="200",description="Carga atual",content=@io.swagger.v3.oas.annotations.media.Content(mediaType="application/json",schema=@io.swagger.v3.oas.annotations.media.Schema(implementation=ImportJobEntity.View.class)))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode="204",description="Nenhuma carga registrada",content=@io.swagger.v3.oas.annotations.media.Content)
+    public ResponseEntity<ImportJobEntity.View> active() {
+        return store.active().map(job->ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(job))
+                .orElseGet(()->ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build());
+    }
     @io.swagger.v3.oas.annotations.Operation(summary="Consultar ocorrências",description="Lista ocorrências ativas; history=true inclui as anteriores. Use o último id em after e limit de 1 a 100. As ocorrências podem ser corrigidas pelas rotas de rows e revalidadas por reprocess.")
     @GetMapping("/{id}/issues") public Object issues(@PathVariable String id,@RequestParam(defaultValue="0") long after,@RequestParam(defaultValue="50") int limit,@RequestParam(defaultValue="false") boolean history) {
         return store.issues(id,after,limit,history);

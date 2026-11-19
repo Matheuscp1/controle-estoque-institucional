@@ -366,6 +366,30 @@ class ImportQueueIntegrationTest {
         mvc.perform(get("/api/imports/inexistente")).andExpect(status().isNotFound());
     }
 
+    @Test void apiDescobreCargaAtualSemInformarIdEPreservaResultadoFinal() throws Exception {
+        mvc.perform(get("/api/imports/active")).andExpect(status().isNoContent()).andExpect(content().string(""));
+        String id=start(archive(false,false,false));
+        mvc.perform(get("/api/imports/active")).andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control","no-store"))
+                .andExpect(jsonPath("$.id").value(id)).andExpect(jsonPath("$.status").value("PREPARING"))
+                .andExpect(jsonPath("$.completedBatches").value(0));
+        stageDirectly(id);finalizer.finish(id);
+        mvc.perform(get("/api/imports/active")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id)).andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.publishedItems").value(1)).andExpect(jsonPath("$.publishedOrders").value(2));
+    }
+
+    @Test void apiDescobreCargaSubstitutaMesmoComHistoricoAnterior() throws Exception {
+        String old=start(archive(false,false,false));
+        db.update("UPDATE import_jobs SET status='FAILED' WHERE id=?",old);
+        mvc.perform(get("/api/imports/active")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(old)).andExpect(jsonPath("$.status").value("FAILED"));
+        String current=start(archive(false,false,false));
+        mvc.perform(get("/api/imports/active")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(current)).andExpect(jsonPath("$.status").value("PREPARING"));
+        mvc.perform(get("/api/imports/"+old)).andExpect(status().isOk()).andExpect(jsonPath("$.id").value(old));
+    }
+
     @Test void zipCorrompidoRetornaErroDeEntrada() throws Exception {
         var file=new org.springframework.mock.web.MockMultipartFile("file","massa.zip","application/zip","invalid".getBytes(StandardCharsets.UTF_8));
         mvc.perform(multipart("/api/imports").file(file)).andExpect(status().isBadRequest());

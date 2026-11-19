@@ -41,6 +41,12 @@ public class ImportStore {
     }
 
     @Transactional(readOnly=true)
+    public Optional<ImportJobEntity.View> active() {
+        var control=em.find(ImportControlEntity.class,1);
+        return control.activeJob==null?Optional.empty():Optional.of(status(control.activeJob));
+    }
+
+    @Transactional(readOnly=true)
     public ImportJobEntity.View status(String id) {
         var job=em.find(ImportJobEntity.class,id);
         if (job==null) throw new NoSuchElementException("Carga não encontrada.");

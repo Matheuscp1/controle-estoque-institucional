@@ -28,11 +28,23 @@ A resposta `202` contém `id`, o SHA-256 do arquivo. Consulte:
 
 ```text
 GET /api/imports/{id}
+GET /api/imports/active
 GET /api/imports/{id}/issues?after=0&limit=100
 POST /api/imports/{id}/retry
 ```
 
 O relatório usa cursor: envie como `after` o último `id` retornado. Cada ocorrência informa arquivo, linha lógica quando identificável (cabeçalho contado como linha 1), chave, motivo e conteúdo original. Erros do arquivo inteiro, como ausência de registros, não têm uma linha específica.
+
+### Descoberta automática pelo frontend
+
+Ao abrir o painel, consulte `GET /api/imports/active`. A rota usa a carga referenciada pelo controle da importação, sem listar o histórico nem exigir que o usuário informe o ID:
+
+- `200`: retorna o mesmo objeto de `GET /api/imports/{id}`, incluindo `id`, `status` e os contadores de progresso. O frontend pode usar esse ID para consultar ocorrências e revisões.
+- `204`: nenhuma carga registrada; não há corpo JSON. Exiba o estado vazio e a opção de enviar o ZIP.
+
+“Active” significa a carga atual vinculada ao sistema, não necessariamente um processamento em execução. O resultado permanece disponível em `COMPLETED`, `COMPLETED_WITH_ISSUES` ou `FAILED`. Se uma carga provisória for substituída, a rota passa a retornar a substituta; a anterior continua acessível por seu ID. Durante `PREPARING`, `STAGING` ou `REVIEW_PENDING`, o painel pode repetir a consulta a cada 3–5 segundos. Atualize também após upload, retomada ou reprocessamento. A resposta usa `Cache-Control: no-store`.
+
+Essa rota apenas consulta: não inicia nem retoma importações, não libera edição e não calcula tempo restante. As proteções de escrita continuam no backend. Com `imports.enabled=false`, as rotas de importação não existem (`404`), o que é diferente do `204` de uma instalação habilitada sem carga.
 
 | Estado | Significado |
 | --- | --- |

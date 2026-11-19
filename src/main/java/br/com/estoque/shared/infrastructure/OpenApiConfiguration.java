@@ -124,7 +124,7 @@ public class OpenApiConfiguration {
                     .schema(new ObjectSchema().addProperty("id",new StringSchema().pattern("[a-f0-9]{64}")).required(List.of("id")))
                     .example(Map.of("id","a".repeat(64)))));
             responses.get("202").setDescription("Arquivo recebido ou já conhecido. Acompanhe o processamento pelo id.");
-        } else if(method==PathItem.HttpMethod.GET&&!path.equals("/api/imports/{id}")) {
+        } else if(method==PathItem.HttpMethod.GET&&!Set.of("/api/imports/{id}","/api/imports/active").contains(path)) {
             responses.get("200").setContent(new Content().addMediaType("application/json",new MediaType()
                     .schema(new ArraySchema().items(importListSchema(path)))));
         } else if(path.contains("/rows/{source}")&&!path.endsWith("/exclude-duplicate")) {

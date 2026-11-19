@@ -62,6 +62,14 @@ class OpenApiIntegrationTest {
         var spec=json.readTree(mvc.perform(get("/v3/api-docs")).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
         assertThat(spec.path("info").path("title").asText()).isEqualTo("Controle de estoque institucional");
         var paths=spec.path("paths");
+        var activeResponses=paths.path("/api/imports/active").path("get").path("responses");
+        assertThat(activeResponses.has("200")).isTrue();
+        assertThat(activeResponses.path("204").has("content")).isFalse();
+        var activeSchema=activeResponses.path("200").path("content").path("application/json").path("schema");
+        if(activeSchema.has("$ref"))activeSchema=spec.at(activeSchema.path("$ref").asText().substring(1));
+        assertThat(activeSchema.path("type").asText()).isEqualTo("object");
+        assertThat(activeSchema.path("properties").has("id")).isTrue();
+        assertThat(activeSchema.path("properties").has("completedBatches")).isTrue();
         for(String path:java.util.List.of("/api/itens","/api/orgaos/{codigo}/pedidos")) {
             var page=paths.path(path).path("get").path("responses").path("200").path("content").elements().next().path("schema");
             if(page.has("$ref"))page=spec.at(page.path("$ref").asText().substring(1));
